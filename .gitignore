@@ -53,9 +53,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# OS generated
+# OS & Office generated
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+~$*
+*.tmp
+
