@@ -1,0 +1,19 @@
+===========================================================================
+ LAPORAN BENCHMARK COMPUTER VISION: AR DRAGON SKY GUARDIAN
+ Waktu Pengujian : 2026-10-26 09:08:42
+ Durasi Uji Tiap Model : 15.0 Detik
+===========================================================================
+
+Model                          | Avg FPS  | Min/Max FPS  | Latensi (ms) | Jitter (ms)
+----------------------------------------------------------------------------------
+MediaPipe Pose (CPU Lite)      |     8.1 |       4 / 21 |         35.6 |      18.02
+YOLOv8n-pose (CUDA GPU)        |     8.0 |        7 / 9 |         39.7 |       7.53
+RTMPose (rtmlib + ONNX CUDA)   |     8.1 |       6 / 12 |         60.5 |      15.50
+----------------------------------------------------------------------------------
+
+KETERANGAN METRIK:
+1. Avg FPS: Rata-rata frame per detik (Target minimal: 30 FPS untuk gameplay mulus).
+2. Latensi: Rata-rata waktu komputasi inferensi model per frame dalam milidetik.
+3. Jitter: Standar deviasi kestabilan jeda antar-frame (Semakin kecil semakin stabil/mulus).
+4. Semua model mengirim paket UDP 12-float CSV ke 127.0.0.1:5052.
+===========================================================================
