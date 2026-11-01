@@ -47,15 +47,16 @@
 ### 3.1 Protokol Paket Data UDP
 - **Host & Port:** `127.0.0.1` (Localhost), Port **`5052`**
 - **Kadar Penghantaran:** >= 30 FPS
-- **Format String CSV (12 nilai float ternormalisasi `0.0000` hingga `1.0000`):**
+- **Format String CSV (13 nilai float ternormalisasi `0.0000` hingga `1.0000`):**
 
 ```text
-LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y
+LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN
 ```
 
 - `parts[0..1]` = Bahu Kiri (LS.x, LS.y) | `parts[2..3]` = Bahu Kanan (RS.x, RS.y)
 - `parts[4..5]` = Pergelangan Tangan Kiri (LW.x, LW.y) | `parts[6..7]` = Pergelangan Tangan Kanan (RW.x, RW.y)
 - `parts[8..9]` = Pinggul Kiri (LH.x, LH.y) | `parts[10..11]` = Pinggul Kanan (RH.x, RH.y)
+- `parts[12]` = Status Mulut Terbuka (`0.0000` = tertutup rapat, `1.0000` = terbuka lebar / `jawOpen`)
 
 ### 3.2 Konvensi Koordinat Skrin (Wajib Seragam)
 - Imej webcam di Python wajib diterbalikkan secara mendatar (`cv2.flip(frame, 1)`).
@@ -92,7 +93,7 @@ Kadar kenaikan progres lokal desa apabila gestur sah: `+20f * Time.deltaTime` (5
 | Desa & Masalah | Aksi Naga | Gestur Pemain | Logik Pengesanan C# |
 | :--- | :--- | :--- | :--- |
 | **Desa 1 (Pollution)** | Mengipas Asap | Kepakkan kedua-dua tangan naik-turun merentasi paras bahu | `bool isAbove = (LW.y < LS.y) && (RW.y < RS.y);` Setiap kali `isAbove != prevIsAbove`, tetapkan `flapTimer = 0.6f`. Gestur sah selagi `flapTimer > 0f`. |
-| **Desa 2 (Wildfire)** | Sembur Air | Rapatkan kedua-dua pergelangan tangan di hadapan dada | Sah jika `Vector2.Distance(LW, RW) < 0.14f` dan tangan di antara paras bahu dan pinggul (`LW.y > LS.y - 0.05f && LW.y < LH.y`). |
+| **Desa 2 (Wildfire)** | Sembur Air | Buka Mulut Lebar (Naga Mengaum) ATAU Rapatkan pergelangan tangan di dada | Sah jika `mouthOpen >= 0.35f` ATAU (`Vector2.Distance(LW, RW) < 0.14f` dan tangan di antara paras bahu dan pinggul). Partikel semburan air aktif di mulut naga. |
 | **Desa 3 (Drought)** | Panggil Hujan Embun | Angkat kedua-dua tangan tinggi di atas kepala (huruf V / Y) | Sah jika kedua-dua pergelangan tangan jauh di atas bahu (`LW.y < LS.y - 0.12f && RW.y < RS.y - 0.12f`). |
 
 ### 4.3 Struktur Level, Masa, & Bintang

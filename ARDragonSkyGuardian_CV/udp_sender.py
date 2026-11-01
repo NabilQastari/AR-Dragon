@@ -1,8 +1,9 @@
 """
 udp_sender.py
-Modul pengirim data UDP untuk posisi keypoint pose (12-float CSV string).
-Format: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y
-Semua nilai ternormalisasi (0.0000 - 1.0000).
+Modul pengirim data UDP untuk posisi keypoint pose + Status Mulut Terbuka.
+Format CSV: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN
+- 12 float pertama: Koordinat ternormalisasi (0.0000 - 1.0000)
+- Nilai ke-13: Nilai mulut terbuka (0.0000 = tertutup rapat, 1.0000 = terbuka lebar)
 """
 
 import socket
@@ -22,12 +23,10 @@ class PoseUDPSender:
         rw: Tuple[float, float],
         lh: Tuple[float, float],
         rh: Tuple[float, float],
+        mouth_open: float = 0.0,
     ) -> bool:
         """
-        Mengirim 6 pasangan koordinat (12 float) ternormalisasi.
-        LS: Left Shoulder, RS: Right Shoulder
-        LW: Left Wrist,    RW: Right Wrist
-        LH: Left Hip,      RH: Right Hip
+        Mengirim 12 nilai koordinat tubuh + 1 nilai mulut terbuka (jawOpen).
         """
         try:
             def clamp(val: float) -> float:
@@ -39,7 +38,8 @@ class PoseUDPSender:
                 f"{clamp(lw[0]):.4f},{clamp(lw[1]):.4f},"
                 f"{clamp(rw[0]):.4f},{clamp(rw[1]):.4f},"
                 f"{clamp(lh[0]):.4f},{clamp(lh[1]):.4f},"
-                f"{clamp(rh[0]):.4f},{clamp(rh[1]):.4f}"
+                f"{clamp(rh[0]):.4f},{clamp(rh[1]):.4f},"
+                f"{clamp(mouth_open):.4f}"
             )
             self.sock.sendto(csv_string.encode("utf-8"), (self.ip, self.port))
             return True

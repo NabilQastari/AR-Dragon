@@ -42,8 +42,9 @@
 ---
 
 ### ✅ Sesi 1: Ujian & Pemilihan Model Computer Vision
-- [x] **`udp_sender.py`**: Modul pengirim data socket UDP ke `127.0.0.1:5052` dengan format CSV 12-float ternormalisasi (`0.0000` - `1.0000`):
-  `LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y`
+- [x] **`udp_sender.py`**: Modul pengirim data socket UDP ke `127.0.0.1:5052` dengan format CSV 13-float ternormalisasi (`0.0000` - `1.0000`):
+  `LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN`
+- [x] **Deteksi Mulut Terbuka (Water Breath / Semburan Air)**: Mengintegrasikan `face_landmarker.task` Blendshape `jawOpen` pada `test_mediapipe.py` sehingga saat mulut pemain terbuka lebar (`jawOpen >= 0.35`), naga langsung menyemburkan air.
 - [x] **Skrip Uji Interaktif Webcam** (720p @ 30 FPS, horizontal mirror `cv2.flip(frame, 1)`, visualisasi skeleton overlay, pembacaan FPS, latensi, dan deteksi gestur real-time):
   - [`test_mediapipe.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_mediapipe.py) (MediaPipe Pose Landmarker)
   - [`test_yolopose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_yolopose.py) (YOLOv8n-pose CUDA GPU)
