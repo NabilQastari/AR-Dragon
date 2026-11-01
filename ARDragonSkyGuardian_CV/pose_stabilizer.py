@@ -1,10 +1,9 @@
 """
 pose_stabilizer.py
-High-Speed Pose Stabilizer & Velocity Predictor.
-Dirancang khusus untuk mendeteksi gerakan tangan berkecepatan tinggi (kepakan sayap, ayunan cepat):
-- Adaptive One-Euro Filter dengan responsifitas tinggi (beta tinggi untuk tangan)
-- Velocity Extrapolation: jika tangan mengalami motion blur selama 1-3 frame, lintasan diproyeksikan secara inersia
-- Elbow Kinematic Guard: memvalidasi posisi tangan berdasarkan titik siku agar tidak melompat keluar anatomi
+Robust Kinematic Pose Stabilizer untuk gerakan dinamis (Kepak Sayap, Angkat Tangan, Sembur Air).
+- Menghilangkan glitch lompatan titik tangan tanpa inersia palsu
+- Batasan Kinematika Lengan (Arm Length Clamping): mencegah titik terlempar keluar tubuh
+- One-Euro Filter presisi tinggi: mulus saat diam, instan saat bergerak
 """
 
 import math
@@ -12,7 +11,7 @@ import time
 from typing import Tuple, Optional
 
 class OneEuroFilter:
-    def __init__(self, min_cutoff: float = 1.0, beta: float = 0.5, d_cutoff: float = 1.0):
+    def __init__(self, min_cutoff: float = 1.2, beta: float = 0.35, d_cutoff: float = 1.0):
         self.min_cutoff = min_cutoff
         self.beta = beta
         self.d_cutoff = d_cutoff
@@ -41,7 +40,6 @@ class OneEuroFilter:
         edx = self._smoothing_factor(dt, self.d_cutoff)
         dx_hat = edx * dx + (1.0 - edx) * self.dx_prev
 
-        # Saat gerakan tangan cepat (|dx_hat| besar), cutoff naik drastis -> ZERO LAG
         cutoff = self.min_cutoff + self.beta * abs(dx_hat)
         ex = self._smoothing_factor(dt, cutoff)
         x_hat = ex * x + (1.0 - ex) * self.x_prev
@@ -54,30 +52,9 @@ class OneEuroFilter:
 
 class PoseStabilizer:
     def __init__(self):
-        # Bahu & Pinggul: gerak lebih lambat, butuh stabilitas tinggi (beta=0.1)
-        # Tangan (Wrist): gerak sangat cepat (kepak sayap), butuh respons instan (beta=0.8)
-        self.filters_x = {
-            "ls": OneEuroFilter(min_cutoff=1.2, beta=0.15),
-            "rs": OneEuroFilter(min_cutoff=1.2, beta=0.15),
-            "lh": OneEuroFilter(min_cutoff=1.0, beta=0.10),
-            "rh": OneEuroFilter(min_cutoff=1.0, beta=0.10),
-            "lw": OneEuroFilter(min_cutoff=1.5, beta=0.85),
-            "rw": OneEuroFilter(min_cutoff=1.5, beta=0.85),
-        }
-        self.filters_y = {
-            "ls": OneEuroFilter(min_cutoff=1.2, beta=0.15),
-            "rs": OneEuroFilter(min_cutoff=1.2, beta=0.15),
-            "lh": OneEuroFilter(min_cutoff=1.0, beta=0.10),
-            "rh": OneEuroFilter(min_cutoff=1.0, beta=0.10),
-            "lw": OneEuroFilter(min_cutoff=1.5, beta=0.85),
-            "rw": OneEuroFilter(min_cutoff=1.5, beta=0.85),
-        }
-
-        # Velocity tracking untuk prediksi inersia saat tangan motion blur
-        self.velocities = {k: (0.0, 0.0) for k in ["lw", "rw"]}
-        self.last_pos = {}
-        self.last_time = {}
-        self.lost_frames = {"lw": 0, "rw": 0}
+        self.filters_x = {k: OneEuroFilter(min_cutoff=1.2, beta=0.35) for k in ["ls", "rs", "lh", "rh", "lw", "rw"]}
+        self.filters_y = {k: OneEuroFilter(min_cutoff=1.2, beta=0.35) for k in ["ls", "rs", "lh", "rh", "lw", "rw"]}
+        self.last_clean = {}
 
     def update_point(
         self,
@@ -85,46 +62,33 @@ class PoseStabilizer:
         raw_x: float,
         raw_y: float,
         conf: float = 1.0,
-        elbow_ref: Optional[Tuple[float, float]] = None
+        shoulder_ref: Optional[Tuple[float, float]] = None
     ) -> Tuple[float, float]:
         t = time.perf_counter()
 
-        # Jika tangan hilang/blur (conf < 0.20), gunakan ekstrapolasi inersia kecepatan (maksimal 4 frame)
-        if conf < 0.20 and key in ["lw", "rw"] and key in self.last_pos:
-            self.lost_frames[key] += 1
-            if self.lost_frames[key] <= 4:
-                # Proyeksikan berdasarkan kecepatan ayunan terakhir
-                vx, vy = self.velocities[key]
-                pred_x = self.last_pos[key][0] + vx * 0.7  # Damping sedikit
-                pred_y = self.last_pos[key][1] + vy * 0.7
+        # Validasi batas layar
+        raw_x = max(0.01, min(0.99, raw_x))
+        raw_y = max(0.01, min(0.99, raw_y))
 
-                # Batasi agar tidak meleset jauh dari siku jika ada
-                if elbow_ref is not None:
-                    max_reach = 0.38
-                    dist = math.hypot(pred_x - elbow_ref[0], pred_y - elbow_ref[1])
-                    if dist > max_reach:
-                        pred_x = elbow_ref[0] + (pred_x - elbow_ref[0]) / dist * max_reach
-                        pred_y = elbow_ref[1] + (pred_y - elbow_ref[1]) / dist * max_reach
+        # 1. Batasan Kinematika Lengan (Mencegah Glitch Tangan Melompat Jauh dari Bahu)
+        if shoulder_ref is not None and key in ["lw", "rw"]:
+            sx, sy = shoulder_ref
+            arm_dist = math.hypot(raw_x - sx, raw_y - sy)
+            max_arm_length = 0.50  # Panjang maksimal jangkauan lengan di layar
 
-                clean_x = self.filters_x[key].filter(pred_x, t)
-                clean_y = self.filters_y[key].filter(pred_y, t)
-                clean_x = max(0.0, min(1.0, clean_x))
-                clean_y = max(0.0, min(1.0, clean_y))
-                self.last_pos[key] = (clean_x, clean_y)
-                return clean_x, clean_y
+            if arm_dist > max_arm_length:
+                # Clamp tangan agar tetap di ujung jangkauan lengan alami
+                scale = max_arm_length / arm_dist
+                raw_x = sx + (raw_x - sx) * scale
+                raw_y = sy + (raw_y - sy) * scale
 
-        # Titik valid terdeteksi
-        self.lost_frames[key] = 0
-
-        # Hitung vektor kecepatan instan untuk tangan
-        if key in ["lw", "rw"] and key in self.last_pos:
-            dt = t - self.last_time.get(key, t - 0.033)
-            if dt > 0.001:
-                vx = (raw_x - self.last_pos[key][0])
-                vy = (raw_y - self.last_pos[key][1])
-                # Smooth kecepatan
-                old_vx, old_vy = self.velocities[key]
-                self.velocities[key] = (0.6 * vx + 0.4 * old_vx, 0.6 * vy + 0.4 * old_vy)
+        # 2. Outlier Rejection: Jika titik melompat > 0.25 dalam 1 frame dengan confidence rendah (< 0.25)
+        if conf < 0.25 and key in self.last_clean:
+            prev_x, prev_y = self.last_clean[key]
+            step = math.hypot(raw_x - prev_x, raw_y - prev_y)
+            if step > 0.20:
+                # Tahan di posisi bersih sebelumnya agar tidak nge-glitch
+                return prev_x, prev_y
 
         clean_x = self.filters_x[key].filter(raw_x, t)
         clean_y = self.filters_y[key].filter(raw_y, t)
@@ -132,6 +96,5 @@ class PoseStabilizer:
         clean_x = max(0.0, min(1.0, clean_x))
         clean_y = max(0.0, min(1.0, clean_y))
 
-        self.last_pos[key] = (clean_x, clean_y)
-        self.last_time[key] = t
+        self.last_clean[key] = (clean_x, clean_y)
         return clean_x, clean_y
