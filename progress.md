@@ -11,7 +11,7 @@
 | Tahap / Sesi | Ruang Lingkup | Status | Keterangan & Hasil |
 | :--- | :--- | :---: | :--- |
 | **Tahap 0** | Setup Manual & Environment Awal | ✅ **SELESAI (100%)** | Unity 2022.3 LTS (URP) diset ke `.NET Framework` & `Run In Background`. Python 3.10 `venv` terkonfigurasi dengan CUDA 12, PyTorch `2.7.1+cu118`, Git initialized dengan `.gitignore`. |
-| **Sesi 1** | Ujian & Pemilihan Model Computer Vision (Python) | ✅ **SELESAI (100%)** | Modul UDP (`udp_sender.py`), 3 skrip uji interaktif, dan benchmark runner selesai dibuat. Pengujian benchmark 15 detik/model berhasil dieksekusi oleh pengguna. |
+| **Sesi 1** | Ujian & Pemilihan Model Computer Vision (Python) | ✅ **SELESAI (100%)** — *Optimized* | Skrip pengujian dan benchmark diperbarui dengan **ThreadedCamera** (MJPG codec, mengeliminasi buffer lag/delay) dan **PoseStabilizer** (Adaptive One-Euro Filter untuk presisi tinggi anti-jitter). |
 | **Sesi 2** | Jambatan UDP Unity & Prototaip Mekanik Terbang (Greybox) | ⏳ **BERIKUTNYA** | Siap dikerjakan: pembuatan `active_cv_sender.py`, script C# UDP receiver & smoothing, kontrol naga auto-forward & tilt, serta menu 1-klik `Session2_GreyboxBuilder.cs`. |
 | **Sesi 3** | Integrasi Model 3D, Lingkungan Pulau, & Animasi Naga | ⏸️ Belum Dimulai | Aset 3D awal sudah tersedia di folder `Assets AR Dragon Sky Guardian/` (`Nagcu.blend`, `pohon.blend`, `rumah.blend`). |
 | **Sesi 4** | Dynamic Environment, Particle Systems, & Progres Desa | ⏸️ Belum Dimulai | Efek asap polusi Desa 1, kebakaran Desa 2, dan kekeringan -> hijau Desa 3. |
@@ -76,6 +76,8 @@ Segera setelah pengguna mengonfirmasi model yang dipilih:
 
 ## 4. Status Aset Pendukung (Persiapan Sesi 3)
 Aset 3D Blender yang telah disiapkan di folder `Assets AR Dragon Sky Guardian/`:
-- `Nagcu.blend`: Model naga utama
-- `pohon.blend`: Model vegetasi untuk lingkungan pulau terapung
+- `Nagcu.blend`: Model naga utama (pemain)
+- `pulau.blend`: Model pulau terapung utama (`Island_Root`)
+- `pohon.blend`: Model vegetasi untuk pulau terapung
 - `rumah.blend`: Model desa untuk 3 zona pemulihan
+
