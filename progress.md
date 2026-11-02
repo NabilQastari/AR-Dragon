@@ -44,11 +44,10 @@
 ### ✅ Sesi 1: Ujian & Pemilihan Model Computer Vision
 - [x] **`udp_sender.py`**: Modul pengirim data socket UDP ke `127.0.0.1:5052` dengan format CSV 13-float ternormalisasi (`0.0000` - `1.0000`):
   `LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN`
-- [x] **Pembaruan 3 Model CV Interaktif (Flap Anti-Glitch & Water Breath)**:
-  - `test_mediapipe.py`: MediaPipe Pose FULL + Face Blendshapes
-  - `test_yolopose.py`: YOLOv8n-pose CUDA + Face Blendshapes + Kinematic Clamping
-  - `test_rtmpose.py`: RTMPose CUDA + Face Blendshapes + Kinematic Clamping
-  - Ketiganya memiliki counter flap, deteksi buka mulut (`jawOpen >= 0.35`), efek partikel air, dan transmisi UDP 13 float.
+- [x] **Instant Mouth Water Breath Tracker (`mouth_tracker.py`)**:
+  - Menggabungkan **Geometric Mouth Aspect Ratio (MAR)** dari jarak bibir atas-bawah dengan **jawOpen Blendshape**.
+  - Menggunakan **Schmitt Trigger Hysteresis** (ON: `0.22`, OFF: `0.15`) sehingga buka mulut wajar langsung memicu semburan air naga **SEKETIKA (Zero Delay)** tanpa perlu menganga ekstrem dan bebas kedip (*anti-flicker*).
+  - Terintegrasi penuh di ketiga model CV (`test_mediapipe.py`, `test_yolopose.py`, `test_rtmpose.py`).
 - [x] **Skrip Uji Interaktif Webcam** (720p @ 30 FPS, horizontal mirror `cv2.flip(frame, 1)`, visualisasi skeleton overlay, pembacaan FPS, latensi, dan deteksi gestur real-time):
   - [`test_mediapipe.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_mediapipe.py) (MediaPipe Pose Landmarker)
   - [`test_yolopose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_yolopose.py) (YOLOv8n-pose CUDA GPU)

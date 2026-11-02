@@ -1,10 +1,10 @@
 """
 test_mediapipe.py
-Pengujian interaktif MediaPipe Pose FULL + Face Landmarker (Deteksi Mulut Terbuka / Water Breath).
-- PoseLandmarker FULL: Gerakan tubuh atas & kepak sayap anti-glitch
-- FaceLandmarker Blendshapes: Deteksi mulut terbuka ('jawOpen') untuk menyemburkan air
-- ThreadedCamera (MJPG 30 FPS, Zero Buffer Lag)
-- UDP 127.0.0.1:5052 (12 koordinat tubuh + 1 status mulut terbuka)
+Pengujian interaktif MediaPipe Pose FULL + Instant Mouth Water Breath Tracker.
+- Pose: MediaPipe Pose FULL (Gerakan Tubuh Atas & Kepak Sayap Anti-Glitch)
+- Mulut: MouthTracker (Instant MAR + jawOpen, Zero Delay, Hysteresis Trigger)
+- Kamera: ThreadedCamera (MJPG 30 FPS, Zero Buffer Lag)
+- UDP: 127.0.0.1:5052 (13 Float CSV)
 """
 
 import os
@@ -22,9 +22,9 @@ from mediapipe.tasks.python import vision
 from udp_sender import PoseUDPSender
 from camera_stream import ThreadedCamera
 from pose_stabilizer import PoseStabilizer
+from mouth_tracker import MouthTracker
 
 def main():
-    # 1. Inisialisasi Pose Landmarker
     pose_model_path = os.path.join(os.path.dirname(__file__), "pose_landmarker_full.task")
     if not os.path.exists(pose_model_path):
         pose_model_path = os.path.join(os.path.dirname(__file__), "pose_landmarker_lite.task")
@@ -37,18 +37,8 @@ def main():
     )
     pose_detector = vision.PoseLandmarker.create_from_options(pose_opts)
 
-    # 2. Inisialisasi Face Landmarker (Blendshapes untuk Deteksi Mulut Terbuka)
-    face_model_path = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
-    face_detector = None
-    if os.path.exists(face_model_path):
-        print("[*] Memuat Face Landmarker (Blendshapes: jawOpen)...")
-        face_opts = vision.FaceLandmarkerOptions(
-            base_options=python.BaseOptions(model_asset_path=face_model_path),
-            output_face_blendshapes=True,
-            num_faces=1,
-            running_mode=vision.RunningMode.IMAGE
-        )
-        face_detector = vision.FaceLandmarker.create_from_options(face_opts)
+    print("[*] Memuat Instant Mouth Tracker (MAR + Blendshapes)...")
+    mouth_tracker = MouthTracker()
 
     sender = PoseUDPSender(ip="127.0.0.1", port=5052)
     stabilizer = PoseStabilizer()
@@ -58,10 +48,10 @@ def main():
     time.sleep(0.5)
 
     print("=" * 65)
-    print("🚀 MENJALANKAN UJI POSE + DETEKSI MULUT TERBUKA (SEMBUR AIR)")
+    print("🚀 MENJALANKAN UJI MEDIAPIPE (INSTANT WATER BREATH)")
     print("   - Gerakan Tubuh: Kepak Sayap, Belok, Hover")
-    print("   - Mulut Terbuka: Semburkan Air (Water Breath) saat jawOpen > 0.35")
-    print("   - UDP 127.0.0.1:5052 (13 Float CSV)")
+    print("   - Mulut Instan : Buka Mulut Wajar Langsung Sembur (Zero Delay)")
+    print("   - UDP          : 127.0.0.1:5052 (13 Float CSV)")
     print("   - Tekan 'q' atau ESC untuk keluar")
     print("=" * 65)
 
@@ -90,31 +80,16 @@ def main():
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-            # Deteksi Pose
+            # 1. Deteksi Pose
             pose_result = pose_detector.detect(mp_image)
 
-            # Deteksi Mulut Terbuka (jawOpen) via Face Landmarker
-            jaw_open_score = 0.0
-            mouth_center = None
-            if face_detector is not None:
-                face_result = face_detector.detect(mp_image)
-                if face_result.face_blendshapes and len(face_result.face_blendshapes) > 0:
-                    for category in face_result.face_blendshapes[0]:
-                        if category.category_name == "jawOpen":
-                            jaw_open_score = float(category.score)
-                            break
-                if face_result.face_landmarks and len(face_result.face_landmarks) > 0:
-                    # Titik bibir 13 (atas) dan 14 (bawah)
-                    lm = face_result.face_landmarks[0]
-                    lip_top = lm[13]
-                    lip_bot = lm[14]
-                    mouth_center = (int((lip_top.x + lip_bot.x) * 0.5 * w), int((lip_top.y + lip_bot.y) * 0.5 * h))
+            # 2. Deteksi Mulut Instan (MAR + Blendshapes)
+            is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_frame(mp_image, w, h)
 
             latency_ms = (time.perf_counter() - t_start) * 1000.0
 
             pose_detected = False
             is_above = False
-            is_water_breathing = (jaw_open_score >= 0.35)
 
             if pose_result.pose_landmarks and len(pose_result.pose_landmarks) > 0:
                 landmarks = pose_result.pose_landmarks[0]
@@ -136,8 +111,9 @@ def main():
                     lh = stabilizer.update_point("lh", raw_lh[0], raw_lh[1])
                     rh = stabilizer.update_point("rh", raw_rh[0], raw_rh[1])
 
-                    # Kirim paket UDP lengkap (12 koordinat + 1 nilai mulut terbuka)
-                    sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=jaw_open_score)
+                    # Kirim UDP 13 float: 12 koordinat pose + 1 status mulut (1.0 jika aktif, 0.0 jika tidak)
+                    udp_mouth_val = 1.0 if is_water_breathing else mouth_score
+                    sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=udp_mouth_val)
 
                     is_above = (lw[1] < ls[1]) and (rw[1] < rs[1])
                     if is_above != prev_above:
@@ -152,10 +128,8 @@ def main():
                     p_lh, p_rh = to_px(lh), to_px(rh)
                     p_le, p_re = to_px(raw_le), to_px(raw_re)
 
-                    # Garis acuan bahu
                     cv2.line(frame, (0, p_ls[1]), (w, p_rs[1]), (80, 80, 80), 1, cv2.LINE_AA)
 
-                    # Gambar rangka badan
                     color_bone = (255, 200, 0)
                     cv2.line(frame, p_ls, p_rs, color_bone, 3)
                     cv2.line(frame, p_ls, p_le, color_bone, 3)
@@ -181,17 +155,17 @@ def main():
             else:
                 tilt = 0.0
 
-            # Efek Visual Semburan Air jika Mulut Terbuka
+            # Efek Visual Semburan Air Instan
             if is_water_breathing and mouth_center is not None:
-                # Gambar aura semburan air biru bercahaya di sekitar mulut
                 mx, my = mouth_center
-                for r_ring in [15, 30, 48]:
-                    cv2.circle(frame, (mx, my), r_ring, (255, 200, 0), 2)
-                # Partikel semprotan air ke arah depan/bawah
-                for i in range(8):
-                    offset_x = np.random.randint(-25, 26)
-                    offset_y = np.random.randint(10, 75)
-                    cv2.circle(frame, (mx + offset_x, my + offset_y), np.random.randint(3, 7), (255, 255, 100), -1)
+                # Lingkaran aura air bercahaya
+                for r_ring in [15, 28, 45]:
+                    cv2.circle(frame, (mx, my), r_ring, (255, 220, 0), 2)
+                # Partikel semburan air memancar deras
+                for _ in range(12):
+                    offset_x = np.random.randint(-30, 31)
+                    offset_y = np.random.randint(15, 85)
+                    cv2.circle(frame, (mx + offset_x, my + offset_y), np.random.randint(4, 9), (255, 255, 120), -1)
 
             curr_time = time.time()
             dt = curr_time - prev_time
@@ -207,7 +181,7 @@ def main():
             cv2.rectangle(overlay, (20, 20), (510, 195), (20, 20, 20), -1)
             cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
 
-            cv2.putText(frame, "MediaPipe: Full Pose + Face Breath Tracker", (35, 50),
+            cv2.putText(frame, "MediaPipe: Full Pose + Instant Water Breath", (35, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
             cv2.putText(frame, f"FPS: {avg_fps:.1f}  |  Latensi Total: {latency_ms:.1f} ms", (35, 80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
@@ -217,15 +191,15 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.50, (220, 220, 220), 1)
 
             # Indikator Mulut Terbuka
-            breath_str = f"SEMBUR AIR AKTIF! ({jaw_open_score:.2f})" if is_water_breathing else f"Mulut Tertutup ({jaw_open_score:.2f})"
-            breath_col = (255, 200, 0) if is_water_breathing else (160, 160, 160)
+            breath_str = f"SEMBUR AIR AKTIF! ({mouth_score:.2f})" if is_water_breathing else f"Mulut Tertutup ({mouth_score:.2f})"
+            breath_col = (255, 220, 0) if is_water_breathing else (160, 160, 160)
             cv2.putText(frame, f"Aksi Mulut : {breath_str}", (35, 140),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.52, breath_col, 2)
 
-            cv2.putText(frame, f"Tilt Belok : {tilt:+.2f} | Nilai UDP: [0..11] Pose + [12] Mulut", (35, 170),
+            cv2.putText(frame, f"Tilt Belok : {tilt:+.2f} | UDP: [0..11] Pose + [12] Mulut", (35, 170),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
 
-            cv2.imshow("AR Dragon - Water Breath & Pose Test", frame)
+            cv2.imshow("AR Dragon - MediaPipe Instant Breath Test", frame)
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q') or key == 27:
                 break
@@ -233,7 +207,7 @@ def main():
         cam.release()
         cv2.destroyAllWindows()
         sender.close()
-        print("[*] Selesai pengujian.")
+        print("[*] Selesai pengujian MediaPipe.")
 
 if __name__ == "__main__":
     main()

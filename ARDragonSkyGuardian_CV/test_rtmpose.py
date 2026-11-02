@@ -1,8 +1,8 @@
 """
 test_rtmpose.py
-Pengujian interaktif RTMPose (via rtmlib + ONNX Runtime GPU CUDA) + Face Landmarker (Mulut Sembur Air).
+Pengujian interaktif RTMPose (via rtmlib + ONNX Runtime GPU CUDA) + Instant Mouth Water Breath Tracker.
 - Pose: RTMPose (CUDA) dengan Kinematic Arm Clamping
-- Wajah & Mulut: MediaPipe Face Landmarker Blendshapes (jawOpen) untuk Sembur Air
+- Mulut: MouthTracker (Instant MAR + Blendshapes, Zero Delay)
 - Kamera: ThreadedCamera (MJPG 30 FPS, Zero Buffer Lag)
 - UDP: 127.0.0.1:5052 (13 Float CSV)
 """
@@ -32,12 +32,11 @@ import onnxruntime as ort
 ort.preload_dlls()
 from rtmlib import Body
 import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
 
 from udp_sender import PoseUDPSender
 from camera_stream import ThreadedCamera
 from pose_stabilizer import PoseStabilizer
+from mouth_tracker import MouthTracker
 
 def main():
     print("[*] Menginisialisasi RTMPose (mode='lightweight', backend='onnxruntime', device='cuda')...")
@@ -49,18 +48,8 @@ def main():
         body = Body(mode='lightweight', backend='onnxruntime', device='cpu')
         device_name = "CPU (Fallback)"
 
-    # Inisialisasi Face Landmarker untuk deteksi mulut terbuka
-    face_model_path = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
-    face_detector = None
-    if os.path.exists(face_model_path):
-        print("[*] Memuat Face Landmarker (jawOpen Blendshapes)...")
-        face_opts = vision.FaceLandmarkerOptions(
-            base_options=python.BaseOptions(model_asset_path=face_model_path),
-            output_face_blendshapes=True,
-            num_faces=1,
-            running_mode=vision.RunningMode.IMAGE
-        )
-        face_detector = vision.FaceLandmarker.create_from_options(face_opts)
+    print("[*] Memuat Instant Mouth Tracker (MAR + Blendshapes)...")
+    mouth_tracker = MouthTracker()
 
     sender = PoseUDPSender(ip="127.0.0.1", port=5052)
     stabilizer = PoseStabilizer()
@@ -70,10 +59,9 @@ def main():
     time.sleep(0.5)
 
     print("=" * 65)
-    print(f"🚀 MENJALANKAN UJI RTMPOSE ({device_name} + Mulut Sembur Air)")
+    print(f"🚀 MENJALANKAN UJI RTMPOSE ({device_name} + INSTANT WATER BREATH)")
     print("   - Gerakan Tubuh: Kepak Sayap, Belok, Hover")
-    print("   - Aksi Mulut   : Buka Mulut Lebar -> Semburan Air Naga")
-    print("   - Kamera       : Threaded Zero-Lag Stream (MJPG)")
+    print("   - Mulut Instan : Buka Mulut Wajar Langsung Sembur (Zero Delay)")
     print("   - UDP          : 127.0.0.1:5052 (13 Float CSV)")
     print("   - Tekan 'q' atau ESC untuk keluar")
     print("=" * 65)
@@ -103,28 +91,15 @@ def main():
             # 1. Inferensi RTMPose
             keypoints, scores = body(frame)
 
-            # 2. Inferensi Face Blendshapes
-            jaw_open_score = 0.0
-            mouth_center = None
-            if face_detector is not None:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-                face_result = face_detector.detect(mp_image)
-                if face_result.face_blendshapes and len(face_result.face_blendshapes) > 0:
-                    for category in face_result.face_blendshapes[0]:
-                        if category.category_name == "jawOpen":
-                            jaw_open_score = float(category.score)
-                            break
-                if face_result.face_landmarks and len(face_result.face_landmarks) > 0:
-                    lm = face_result.face_landmarks[0]
-                    lip_top, lip_bot = lm[13], lm[14]
-                    mouth_center = (int((lip_top.x + lip_bot.x) * 0.5 * w), int((lip_top.y + lip_bot.y) * 0.5 * h))
+            # 2. Inferensi Mulut Instan (MAR + Blendshapes)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_frame(mp_image, w, h)
 
             latency_ms = (time.perf_counter() - t_start) * 1000.0
 
             pose_detected = False
             is_above = False
-            is_water_breathing = (jaw_open_score >= 0.35)
 
             if keypoints is not None and len(keypoints) > 0:
                 kpts = keypoints[0]
@@ -147,8 +122,8 @@ def main():
                     lh = stabilizer.update_point("lh", raw_lh[0], raw_lh[1])
                     rh = stabilizer.update_point("rh", raw_rh[0], raw_rh[1])
 
-                    # Kirim UDP 13 float
-                    sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=jaw_open_score)
+                    udp_mouth_val = 1.0 if is_water_breathing else mouth_score
+                    sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=udp_mouth_val)
 
                     is_above = (lw[1] < ls[1]) and (rw[1] < rs[1])
                     if is_above != prev_above:
@@ -190,15 +165,15 @@ def main():
             else:
                 tilt = 0.0
 
-            # Efek Partikel Air Semburan Naga
+            # Efek Visual Semburan Air Instan
             if is_water_breathing and mouth_center is not None:
                 mx, my = mouth_center
-                for r_ring in [15, 30, 48]:
-                    cv2.circle(frame, (mx, my), r_ring, (255, 200, 0), 2)
-                for _ in range(8):
-                    offset_x = np.random.randint(-25, 26)
-                    offset_y = np.random.randint(10, 75)
-                    cv2.circle(frame, (mx + offset_x, my + offset_y), np.random.randint(3, 7), (255, 255, 100), -1)
+                for r_ring in [15, 28, 45]:
+                    cv2.circle(frame, (mx, my), r_ring, (255, 220, 0), 2)
+                for _ in range(12):
+                    offset_x = np.random.randint(-30, 31)
+                    offset_y = np.random.randint(15, 85)
+                    cv2.circle(frame, (mx + offset_x, my + offset_y), np.random.randint(4, 9), (255, 255, 120), -1)
 
             curr_time = time.time()
             dt = curr_time - prev_time
@@ -214,7 +189,7 @@ def main():
             cv2.rectangle(overlay, (20, 20), (510, 195), (20, 20, 20), -1)
             cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
 
-            cv2.putText(frame, f"RTMPose ({device_name}) + Face Water Breath", (35, 50),
+            cv2.putText(frame, f"RTMPose ({device_name}) + Instant Water Breath", (35, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
             cv2.putText(frame, f"FPS: {avg_fps:.1f}  |  Latensi Total: {latency_ms:.1f} ms", (35, 80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
@@ -223,15 +198,15 @@ def main():
             cv2.putText(frame, f"Kepak Sayap: {flap_status} (Flap: {flap_count})", (35, 110),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.50, (220, 220, 220), 1)
 
-            breath_str = f"SEMBUR AIR AKTIF! ({jaw_open_score:.2f})" if is_water_breathing else f"Mulut Tertutup ({jaw_open_score:.2f})"
-            breath_col = (255, 200, 0) if is_water_breathing else (160, 160, 160)
+            breath_str = f"SEMBUR AIR AKTIF! ({mouth_score:.2f})" if is_water_breathing else f"Mulut Tertutup ({mouth_score:.2f})"
+            breath_col = (255, 220, 0) if is_water_breathing else (160, 160, 160)
             cv2.putText(frame, f"Aksi Mulut : {breath_str}", (35, 140),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.52, breath_col, 2)
 
             cv2.putText(frame, f"Tilt Belok : {tilt:+.2f} | UDP: [0..11] Pose + [12] Mulut", (35, 170),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
 
-            cv2.imshow("AR Dragon - RTMPose & Water Breath Test", frame)
+            cv2.imshow("AR Dragon - RTMPose Instant Breath Test", frame)
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q') or key == 27:
                 break
