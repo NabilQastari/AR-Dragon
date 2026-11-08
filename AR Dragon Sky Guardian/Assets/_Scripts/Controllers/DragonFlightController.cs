@@ -19,25 +19,49 @@ namespace DragonWingAR.Controllers
         [SerializeField] private MonoBehaviour poseProviderSource;
         private IPoseProvider _poseProvider;
 
-        [Header("Parameter Terbang Otomatis")]
+        [Header("Parameter Terbang Maju")]
         [Tooltip("Kecepatan terbang maju otomatis (sesuai konteks.md = 12f)")]
         public float forwardSpeed = 12f;
-
-        [Tooltip("Ketinggian naga tetap stabil di udara (sesuai konteks.md = 15f)")]
-        public float fixedAltitudeY = 15f;
 
         [Tooltip("Kecepatan putar arah naga / Yaw (sesuai konteks.md = 65f)")]
         public float yawTurnSpeed = 65f;
 
-        [Header("Model Visual & Kemiringan Roll")]
-        [Tooltip("Transform child model naga untuk efek kemiringan visual (Z-axis banking)")]
+        [Header("Parameter Terbang Vertikal (Naik & Turun)")]
+        [Tooltip("Ketinggian naga saat ini")]
+        public float currentAltitude = 15f;
+
+        /// <summary>
+        /// Properti kompatibilitas untuk fixed altitude lama
+        /// </summary>
+        public float fixedAltitudeY { get => currentAltitude; set => currentAltitude = value; }
+
+        [Tooltip("Ketinggian minimum di atas daratan")]
+        public float minAltitude = 4f;
+
+        [Tooltip("Ketinggian maksimum jelajah")]
+        public float maxAltitude = 45f;
+
+        [Tooltip("Kecepatan menanjak naik saat kepakan sayap (m/s)")]
+        public float climbSpeed = 8f;
+
+        [Tooltip("Kecepatan menukik turun saat dive pose (m/s)")]
+        public float diveSpeed = 10f;
+
+        [Tooltip("Kecepatan transisi smoothing ketinggian")]
+        public float altitudeSmoothSpeed = 4f;
+
+        [Header("Model Visual & Kemiringan Dinamis")]
+        [Tooltip("Transform child model naga untuk efek kemiringan visual (Banking Roll & Pitch)")]
         public Transform visualModel;
 
-        [Tooltip("Sudut kemiringan visual maksimal saat belok tajam (sesuai konteks.md = 35f)")]
+        [Tooltip("Sudut kemiringan visual Roll maksimal saat belok tajam (sesuai konteks.md = 35f)")]
         public float maxRollAngle = 35f;
 
+        [Tooltip("Sudut kemiringan visual Pitch maksimal saat menanjak/menukik (derajat)")]
+        public float maxPitchAngle = 20f;
+
         [Tooltip("Kecepatan transisi kemiringan model visual")]
-        public float rollSmoothSpeed = 8f;
+        public float attitudeSmoothSpeed = 8f;
 
         [Header("Pengaturan Auto-Hover (Saat di Desa)")]
         [Tooltip("Kecepatan naga memutar badan menghadap pusat desa saat hovering")]
@@ -52,6 +76,7 @@ namespace DragonWingAR.Controllers
         [Header("Status Telemetri (Read Only)")]
         [SerializeField] private bool _isHovering = false;
         [SerializeField] private float _currentTurnInput = 0f;
+        [SerializeField] private float _currentPitchInput = 0f;
         [SerializeField] private float _currentSpeed = 0f;
         [SerializeField] private Vector3 _hoverLookTarget;
 
@@ -59,6 +84,9 @@ namespace DragonWingAR.Controllers
 
         public bool IsHovering => _isHovering;
         public float CurrentSpeed => _currentSpeed;
+        public float CurrentTurnInput => _currentTurnInput;
+        public float CurrentPitchInput => _currentPitchInput;
+        public float CurrentAltitude => currentAltitude;
 
         private void Awake()
         {
@@ -72,12 +100,16 @@ namespace DragonWingAR.Controllers
             // Inisialisasi Pose Provider
             ResolvePoseProvider();
 
-            // Pastikan model visual terpisah agar roll visual tidak mengganggu arah maju
+            // Pastikan model visual terpisah agar roll & pitch visual tidak mengganggu arah maju
             SetupVisualModel();
 
-            // Kunci posisi awal naga di ketinggian standar
+            // Set ketinggian awal naga
+            if (currentAltitude <= 1f)
+            {
+                currentAltitude = 15f;
+            }
             Vector3 initPos = transform.position;
-            initPos.y = fixedAltitudeY;
+            initPos.y = currentAltitude;
             transform.position = initPos;
         }
 
@@ -89,7 +121,7 @@ namespace DragonWingAR.Controllers
             }
             else
             {
-                _poseProvider = GetComponent<IPoseProvider>() ?? FindObjectOfType<UDPPoseReceiver>();
+                _poseProvider = GetComponent<IPoseProvider>() ?? FindFirstObjectByType<UDPPoseReceiver>();
             }
         }
 
@@ -98,7 +130,7 @@ namespace DragonWingAR.Controllers
             if (visualModel != null) return;
 
             // Cari child bernama "Visual" atau "Model"
-            Transform childVisual = transform.Find("Visual") ?? transform.Find("Model");
+            Transform childVisual = transform.Find("Visual") ?? transform.Find("Model") ?? transform.Find("Visual_Dragon");
             if (childVisual != null)
             {
                 visualModel = childVisual;
@@ -132,11 +164,13 @@ namespace DragonWingAR.Controllers
             if (_poseProvider != null)
             {
                 _currentTurnInput = _poseProvider.TurnInput;
+                _currentPitchInput = _poseProvider.PitchInput;
             }
             else
             {
                 ResolvePoseProvider();
                 _currentTurnInput = 0f;
+                _currentPitchInput = 0f;
             }
 
             if (_isHovering)
@@ -148,29 +182,55 @@ namespace DragonWingAR.Controllers
                 HandleFlightMovement();
             }
 
-            // Update kemiringan roll model visual (visual banking)
-            UpdateVisualRoll();
+            // Update kemiringan roll & pitch model visual (visual banking & attitude)
+            UpdateVisualAttitude();
         }
 
         /// <summary>
-        /// Pergerakan terbang reguler di luar zona desa:
-        /// Maju otomatis 12 m/s, ketinggian tetap Y = 15 m, dan belok Yaw berdasarkan TurnInput.
+        /// Pergerakan terbang naga dengan navigasi 3D lengkap:
+        /// 1. Auto-Forward: Maju otomatis (kecepatan bertambah saat menukik / dive boost).
+        /// 2. Ketinggian Dinamis: Naik saat kepak sayap, turun saat dive pose, stabil saat T-pose.
+        /// 3. Kemudi Belok: Putaran Yaw (65 deg/s) berdasarkan kemiringan tangan.
         /// </summary>
         private void HandleFlightMovement()
         {
-            _currentSpeed = forwardSpeed;
+            // 1. Maju Otomatis dengan Dinamika Kecepatan (Dive Boost)
+            float speedModifier = 1.0f;
+            if (_currentPitchInput < -0.1f)
+            {
+                // Menukik: gravitasi menambah kecepatan hingga +35% (misal 12 -> 16.2 m/s)
+                speedModifier += Mathf.Abs(_currentPitchInput) * 0.35f;
+            }
+            else if (_currentPitchInput > 0.1f)
+            {
+                // Menanjak: hambatan gravitasi sedikit melambatkan maju (misal 12 -> 10.5 m/s)
+                speedModifier -= _currentPitchInput * 0.12f;
+            }
 
-            // 1. Maju Otomatis (Auto-Forward)
+            _currentSpeed = forwardSpeed * speedModifier;
             Vector3 moveDelta = transform.forward * (_currentSpeed * Time.deltaTime);
             transform.position += moveDelta;
 
-            // 2. Kunci Ketinggian Tetap (Fixed Altitude Y = 15m)
+            // 2. Kontrol Ketinggian Vertikal Dinamis (Naik / Turun / T-Pose Gliding)
+            if (_currentPitchInput > 0.05f)
+            {
+                // Tangan dikepakkan -> Naik (Climb)
+                currentAltitude += _currentPitchInput * climbSpeed * Time.deltaTime;
+            }
+            else if (_currentPitchInput < -0.05f)
+            {
+                // Dive Pose -> Turun (Dive)
+                currentAltitude += _currentPitchInput * diveSpeed * Time.deltaTime;
+            }
+            // Catatan: Jika T-Pose (_currentPitchInput == 0), currentAltitude dipertahankan stabil di ketinggian saat ini!
+
+            currentAltitude = Mathf.Clamp(currentAltitude, minAltitude, maxAltitude);
+
             Vector3 currentPos = transform.position;
-            currentPos.y = fixedAltitudeY;
+            currentPos.y = Mathf.Lerp(currentPos.y, currentAltitude, Time.deltaTime * altitudeSmoothSpeed);
             transform.position = currentPos;
 
             // 3. Putaran Arah Kemudi (Yaw Turn)
-            // Sesuai konteks.md Bagian 4.1: transform.Rotate(Vector3.up * turnInput * 65f * Time.deltaTime)
             if (Mathf.Abs(_currentTurnInput) > 0.001f)
             {
                 float yawDelta = _currentTurnInput * yawTurnSpeed * Time.deltaTime;
@@ -189,7 +249,7 @@ namespace DragonWingAR.Controllers
             // Gerakan mengambang naik-turun halus (hover bobbing)
             float bobOffsetY = Mathf.Sin(Time.time * hoverBobFrequency) * hoverBobAmplitude;
             Vector3 pos = transform.position;
-            pos.y = fixedAltitudeY + bobOffsetY;
+            pos.y = currentAltitude + bobOffsetY;
             transform.position = pos;
 
             // Memutar badan secara halus menghadap pusat desa
@@ -204,20 +264,26 @@ namespace DragonWingAR.Controllers
         }
 
         /// <summary>
-        /// Memperbarui kemiringan roll visual pada child visualModel.
-        /// Sesuai konteks.md: visualModel.localRotation dicondongkan pada paksi Z sebanyak -turnInput * 35f.
+        /// Memperbarui kemiringan visual (Banking Roll & Pitch) pada visualModel naga.
+        /// - Roll: Miring saat belok kiri/kanan (-turnInput * maxRollAngle).
+        /// - Pitch: Menengadah saat naik (climb) dan menunduk tajam saat menukik (dive).
+        /// - T-Pose: Kembali rata mendatar (0 deg).
         /// </summary>
-        private void UpdateVisualRoll()
+        private void UpdateVisualAttitude()
         {
             if (visualModel == null) return;
 
             float targetRoll = _isHovering ? 0f : (-_currentTurnInput * maxRollAngle);
-            Quaternion targetLocalRot = Quaternion.Euler(0f, 0f, targetRoll);
+            // Pitch: Saat menanjak (_currentPitchInput > 0), kepala naga mengarah ke atas (-Euler X)
+            // Saat menukik (_currentPitchInput < 0), kepala naga menunduk ke bumi (+Euler X)
+            float targetPitch = _isHovering ? 0f : (-_currentPitchInput * maxPitchAngle);
+
+            Quaternion targetLocalRot = Quaternion.Euler(targetPitch, 0f, targetRoll);
 
             visualModel.localRotation = Quaternion.Slerp(
                 visualModel.localRotation,
                 targetLocalRot,
-                Time.deltaTime * rollSmoothSpeed
+                Time.deltaTime * attitudeSmoothSpeed
             );
         }
 

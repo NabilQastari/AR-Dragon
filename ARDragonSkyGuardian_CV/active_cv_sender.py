@@ -169,10 +169,34 @@ def main():
                         flap_count, flap_state_str, flap_freq, flap_power = flap_detector.update(lw, rw, ls, rs)
                         raw_diff, norm_tilt = compute_smooth_tilt(lw, rw, deadzone=0.035, max_tilt=0.25)
 
-            # 2. Inferensi Mulut Terbuka via Crop Area Kepala
+            # 2. Deteksi Manuver Vertikal (T-Pose / Naik / Dive)
+            vert_mode_str = "T-POSE (MELUNCUR)"
+            vert_mode_color = (255, 230, 80)
+            if pose_detected:
+                avg_sy = (ls[1] + rs[1]) * 0.5
+                avg_wy = (lw[1] + rw[1]) * 0.5
+                avg_hy = (lh[1] + rh[1]) * 0.5
+                w_span = abs(rw[0] - lw[0])
+                s_span = max(0.08, abs(rs[0] - ls[0]))
+
+                is_dive = (avg_wy > avg_hy - 0.05 or avg_wy > avg_sy + 0.20) and (w_span < s_span * 1.6)
+                is_climb = (lw[1] < ls[1] - 0.02 and rw[1] < rs[1] - 0.02) or (flap_freq > 0.4)
+                is_tpose = (abs(lw[1] - ls[1]) < 0.12 and abs(rw[1] - rs[1]) < 0.12 and (w_span > s_span * 1.25))
+
+                if is_dive:
+                    vert_mode_str = "DIVE POSE (TURUN ↓)"
+                    vert_mode_color = (0, 140, 255)
+                elif is_climb:
+                    vert_mode_str = "KEPAK SAYAP (NAIK ↑)"
+                    vert_mode_color = (0, 255, 100)
+                elif is_tpose:
+                    vert_mode_str = "T-POSE (LURUS MENDATAR)"
+                    vert_mode_color = (255, 230, 80)
+
+            # 3. Inferensi Mulut Terbuka via Crop Area Kepala
             is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_crop(frame, head_pos)
 
-            # 3. Pengiriman Paket UDP ke Unity
+            # 4. Pengiriman Paket UDP ke Unity
             if pose_detected:
                 udp_mouth_val = 1.0 if is_water_breathing else mouth_score
                 sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=udp_mouth_val)
@@ -188,7 +212,7 @@ def main():
                 fps_history.pop(0)
             avg_fps = sum(fps_history) / len(fps_history)
 
-            # 4. Gambar Anotasi Pose & Visual Feedback pada Frame
+            # 5. Gambar Anotasi Pose & Visual Feedback pada Frame
             if pose_detected:
                 def to_px(pt):
                     return (int(np.clip(pt[0], 0, 1) * w), int(np.clip(pt[1], 0, 1) * h))
@@ -217,15 +241,15 @@ def main():
                 mx, my = mouth_center
                 cv2.circle(frame, (mx, my), 22, (255, 220, 0), 2)
 
-            # 5. Kirim Frame Video ke Unity via UDP (PIP Preview)
+            # 6. Kirim Frame Video ke Unity via UDP (PIP Preview)
             if video_sender is not None:
                 video_sender.send_frame(frame)
 
-            # 6. Rendering GUI Window (Kecuali mode headless)
+            # 7. Rendering GUI Window (Kecuali mode headless)
             if not args.headless:
                 # HUD Telemetri
                 overlay = frame.copy()
-                cv2.rectangle(overlay, (20, 15), (540, 175), (15, 15, 15), -1)
+                cv2.rectangle(overlay, (20, 15), (550, 195), (15, 15, 15), -1)
                 cv2.addWeighted(overlay, 0.78, frame, 0.22, 0, frame)
 
                 status_txt = "TERKUNCI" if pose_detected else "MENCARI..."
@@ -233,12 +257,14 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
                 cv2.putText(frame, f"FPS: {avg_fps:.1f}  |  Latensi AI: {latency_ms:.1f} ms", (35, 75),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 120), 2)
-                cv2.putText(frame, f"Sayap: {flap_state_str} (Flap: {flap_count} | Freq: {flap_freq:.1f} Hz)", (35, 105),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1)
-                cv2.putText(frame, f"Tilt : {norm_tilt:+.2f} | Mulut: {'SEMBUR AIR' if is_water_breathing else 'TUTUP'} ({mouth_score:.2f})", (35, 135),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 220, 0) if is_water_breathing else (180, 180, 180), 1)
-                cv2.putText(frame, f"UDP  : 127.0.0.1:{args.port} | Video PIP: :{args.video_port}", (35, 160),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1)
+                cv2.putText(frame, f"Manuver: {vert_mode_str}", (35, 105),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, vert_mode_color, 2)
+                cv2.putText(frame, f"Sayap: {flap_state_str} (Freq: {flap_freq:.1f} Hz) | Tilt: {norm_tilt:+.2f}", (35, 135),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
+                cv2.putText(frame, f"Mulut: {'SEMBUR AIR' if is_water_breathing else 'TUTUP'} ({mouth_score:.2f})", (35, 160),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 220, 0) if is_water_breathing else (180, 180, 180), 1)
+                cv2.putText(frame, f"UDP  : 127.0.0.1:{args.port} | PIP: :{args.video_port}", (35, 182),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1)
 
                 cv2.imshow("AR Dragon - Active CV Sender (YOLOv8n-pose)", frame)
                 key = cv2.waitKey(1) & 0xFF

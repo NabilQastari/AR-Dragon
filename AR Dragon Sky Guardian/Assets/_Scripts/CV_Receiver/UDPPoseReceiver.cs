@@ -55,6 +55,9 @@ namespace DragonWingAR.CV
         public float MouthOpen => _smoothedMouth;
         public bool IsWaterBreathing => _isWaterBreathing;
         public float TurnInput => _turnInput;
+        public float PitchInput => _pitchInput;
+        public bool IsTPose => _isTPose;
+        public bool IsDiving => _isDiving;
 
         public bool IsFlapping => _isFlapping;
         public bool IsHandsTogether => _isHandsTogether;
@@ -67,6 +70,9 @@ namespace DragonWingAR.CV
         [SerializeField] private bool _isConnected = false;
         [SerializeField] private bool _isPoseDetected = false;
         [SerializeField] private float _turnInput = 0f;
+        [SerializeField] private float _pitchInput = 0f;
+        [SerializeField] private bool _isTPose = true;
+        [SerializeField] private bool _isDiving = false;
         [SerializeField] private float _smoothedMouth = 0f;
         [SerializeField] private bool _isWaterBreathing = false;
         [SerializeField] private bool _isFlapping = false;
@@ -286,12 +292,18 @@ namespace DragonWingAR.CV
                 _turnInput = Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
             }
 
-            // 3. Kalkulasi Gestur Sesuai Aturan konteks.md Bagian 4.2
-            // a. Desa 1 (Pollution): Kepakan Sayap (LW.y < LS.y && RW.y < RS.y)
-            bool isAbove = (_smoothedLW.y < _smoothedLS.y) && (_smoothedRW.y < _smoothedRS.y);
+            // 3. Kalkulasi Gestur Terbang Vertikal (Naik / Turun / T-Pose) & Pemulihan Desa
+            float avgShoulderY = (_smoothedLS.y + _smoothedRS.y) * 0.5f;
+            float avgWristY = (_smoothedLW.y + _smoothedRW.y) * 0.5f;
+            float avgHipY = (_smoothedLH.y + _smoothedRH.y) * 0.5f;
+            float shoulderSpan = Mathf.Max(0.08f, Mathf.Abs(_smoothedRS.x - _smoothedLS.x));
+            float wristSpan = Mathf.Abs(_smoothedRW.x - _smoothedLW.x);
+
+            // a. Deteksi Kepakan Sayap (Flapping -> Naik)
+            bool isAbove = (_smoothedLW.y < _smoothedLS.y - 0.02f) && (_smoothedRW.y < _smoothedRS.y - 0.02f);
             if (isAbove != _prevIsAbove)
             {
-                _flapTimer = 0.6f;
+                _flapTimer = 0.55f;
                 _prevIsAbove = isAbove;
             }
 
@@ -305,14 +317,43 @@ namespace DragonWingAR.CV
                 _isFlapping = false;
             }
 
-            // b. Desa 2 (Wildfire): Sembur Air (Buka Mulut > 0.45f ATAU Tangan Rapat di Dada)
-            // Jarak tangan di depan dada < 0.14f dan di antara bahu & pinggul
+            // b. Deteksi Dive Pose (Menukik -> Turun)
+            // Kedua tangan ditarik ke bawah (di bawah garis pinggul atau jauh di bawah bahu) dengan lengan menguncup
+            bool handsDownLow = (_smoothedLW.y > avgHipY - 0.05f) && (_smoothedRW.y > avgHipY - 0.05f);
+            bool handsDeepBelowShoulder = (_smoothedLW.y > avgShoulderY + 0.20f) && (_smoothedRW.y > avgShoulderY + 0.20f);
+            _isDiving = (handsDownLow || handsDeepBelowShoulder) && (wristSpan < shoulderSpan * 1.6f);
+
+            // c. Deteksi T-Pose (Lurus ke Depan / Meluncur Level)
+            // Tangan direntangkan melebar ke samping dan berada dekat ketinggian bahu
+            bool handsNearShoulderLevel = Mathf.Abs(_smoothedLW.y - _smoothedLS.y) < 0.12f && Mathf.Abs(_smoothedRW.y - _smoothedRS.y) < 0.12f;
+            bool armsOutstretched = wristSpan > shoulderSpan * 1.25f;
+            _isTPose = handsNearShoulderLevel && armsOutstretched && !_isFlapping && !_isDiving;
+
+            // d. Kalkulasi Nilai PitchInput (-1.0f = Dive Turun, +1.0f = Kepak Naik, 0.0f = T-Pose Datar)
+            float targetPitch = 0f;
+            if (_isDiving)
+            {
+                targetPitch = -1.0f; // Menukik turun
+            }
+            else if (_isFlapping || isAbove)
+            {
+                targetPitch = 1.0f;  // Kepak sayap naik
+            }
+            else
+            {
+                targetPitch = 0.0f;  // T-pose / Netral level flight
+            }
+
+            // Transisi pitch halus agar naga bermanuver anggun
+            _pitchInput = Mathf.MoveTowards(_pitchInput, targetPitch, Time.deltaTime * 5.0f);
+
+            // e. Desa 2 (Wildfire): Sembur Air (Buka Mulut > 0.45f ATAU Tangan Rapat di Dada)
             _isHandsTogether = (Vector2.Distance(_smoothedLW, _smoothedRW) < 0.14f) &&
                                (_smoothedLW.y > _smoothedLS.y - 0.05f && _smoothedLW.y < _smoothedLH.y);
 
             _isWaterBreathing = (_smoothedMouth > 0.45f) || _isHandsTogether;
 
-            // c. Desa 3 (Drought): Panggil Hujan Embun (Tangan diangkat tinggi di atas kepala)
+            // f. Desa 3 (Drought): Panggil Hujan Embun (Tangan diangkat tinggi di atas kepala)
             _isHandsHighUp = (_smoothedLW.y < _smoothedLS.y - 0.12f) && (_smoothedRW.y < _smoothedRS.y - 0.12f);
 
             // 4. Keyboard Fallback (Jika diaktifkan & ditekan oleh pengguna)
@@ -326,6 +367,7 @@ namespace DragonWingAR.CV
         /// Menyediakan kontrol alternatif melalui keyboard sehingga developer/penguji
         /// dapat mengendalikan naga dan menguji 3 desa kapan saja tanpa webcam.
         /// Mendukung Input System baru (Keyboard.current) maupun Legacy Input Manager.
+        /// W/Panah Atas: Kepak Sayap (Naik) | S/Panah Bawah: Dive (Turun) | T-Pose (Lurus Lepas)
         /// </summary>
         private void HandleKeyboardFallback()
         {
@@ -333,6 +375,7 @@ namespace DragonWingAR.CV
             var kb = Keyboard.current;
             if (kb != null)
             {
+                // Belok Horizontal (A/D atau Panah Kiri/Kanan)
                 float h = 0f;
                 if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) h -= 1f;
                 if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) h += 1f;
@@ -341,8 +384,37 @@ namespace DragonWingAR.CV
                     _turnInput = Mathf.Clamp(h, -1f, 1f);
                 }
 
-                // Tombol 1 atau Space: Simulasi Kepakan Sayap (Desa 1)
-                if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed || kb.spaceKey.isPressed)
+                // Naik / Turun Vertikal:
+                // W atau Panah Atas atau Space: Kepak sayap / Naik
+                float targetV = 0f;
+                if (kb.upArrowKey.isPressed || kb.wKey.isPressed || kb.spaceKey.isPressed)
+                {
+                    targetV = 1.0f;
+                    _isFlapping = true;
+                    _flapTimer = 0.4f;
+                    _isDiving = false;
+                    _isTPose = false;
+                }
+                // S atau Panah Bawah: Dive pose / Turun
+                else if (kb.downArrowKey.isPressed || kb.sKey.isPressed)
+                {
+                    targetV = -1.0f;
+                    _isDiving = true;
+                    _isFlapping = false;
+                    _isTPose = false;
+                }
+                else
+                {
+                    // Tidak menekan vertikal = T-Pose (Terbang Lurus Mendatar)
+                    targetV = 0f;
+                    _isTPose = true;
+                    _isDiving = false;
+                }
+
+                _pitchInput = Mathf.MoveTowards(_pitchInput, targetV, Time.deltaTime * 6.0f);
+
+                // Tombol 1: Simulasi Kepakan Sayap (Desa 1)
+                if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed)
                 {
                     _isFlapping = true;
                     _flapTimer = 0.4f;
@@ -367,28 +439,49 @@ namespace DragonWingAR.CV
             // Fallback Legacy Input Manager HANYA jika paket Input System tidak terpasang
             try
             {
-                // Belok Kiri / Kanan menggunakan Panah atau A / D
                 float horizontalAxis = Input.GetAxisRaw("Horizontal");
                 if (Mathf.Abs(horizontalAxis) > 0.01f)
                 {
                     _turnInput = Mathf.Clamp(horizontalAxis, -1f, 1f);
                 }
 
-                // Tombol 1 atau Space: Simulasi Kepakan Sayap (Desa 1)
-                if (Input.GetKey(KeyCode.Alpha1) || Input.GetKey(KeyCode.Keypad1) || Input.GetKey(KeyCode.Space))
+                float verticalAxis = Input.GetAxisRaw("Vertical");
+                if (Input.GetKey(KeyCode.Space)) verticalAxis = 1f;
+
+                if (verticalAxis > 0.1f)
+                {
+                    _pitchInput = 1f;
+                    _isFlapping = true;
+                    _flapTimer = 0.4f;
+                    _isDiving = false;
+                    _isTPose = false;
+                }
+                else if (verticalAxis < -0.1f)
+                {
+                    _pitchInput = -1f;
+                    _isDiving = true;
+                    _isFlapping = false;
+                    _isTPose = false;
+                }
+                else
+                {
+                    _pitchInput = 0f;
+                    _isTPose = true;
+                    _isDiving = false;
+                }
+
+                if (Input.GetKey(KeyCode.Alpha1) || Input.GetKey(KeyCode.Keypad1))
                 {
                     _isFlapping = true;
                     _flapTimer = 0.4f;
                 }
 
-                // Tombol 2 atau F: Simulasi Semburan Air Naga (Desa 2)
                 if (Input.GetKey(KeyCode.Alpha2) || Input.GetKey(KeyCode.Keypad2) || Input.GetKey(KeyCode.F))
                 {
                     _isWaterBreathing = true;
                     _smoothedMouth = 1.0f;
                 }
 
-                // Tombol 3 atau R: Simulasi Panggil Hujan Embun (Desa 3)
                 if (Input.GetKey(KeyCode.Alpha3) || Input.GetKey(KeyCode.Keypad3) || Input.GetKey(KeyCode.R))
                 {
                     _isHandsHighUp = true;
@@ -396,7 +489,6 @@ namespace DragonWingAR.CV
             }
             catch (Exception)
             {
-                // Mencegah crash jika legacy input dinonaktifkan di Player Settings
             }
 #endif
         }

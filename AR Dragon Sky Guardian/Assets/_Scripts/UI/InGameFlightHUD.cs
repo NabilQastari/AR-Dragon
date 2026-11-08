@@ -278,31 +278,55 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawFlightHUD()
         {
-            Rect hudRect = new Rect(20, 20, 310, 155);
+            Rect hudRect = new Rect(20, 20, 320, 175);
             GUI.color = Color.white;
             GUI.DrawTexture(hudRect, _boxBgTexture);
             DrawOutline(hudRect, 1, new Color(0.2f, 0.8f, 1f, 0.6f));
 
             float speed = (flightController != null) ? flightController.CurrentSpeed : 12f;
+            float altitude = (flightController != null) ? flightController.transform.position.y : 15f;
             bool isHovering = (flightController != null) && flightController.IsHovering;
             float turnInput = (poseReceiver != null) ? poseReceiver.TurnInput : 0f;
+            float pitchInput = (poseReceiver != null) ? poseReceiver.PitchInput : 0f;
 
             GUIStyle titleStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, fontSize = 13 };
             GUI.color = new Color(0f, 1f, 0.9f);
-            GUI.Label(new Rect(32, 28, 280, 22), "AR DRAGON SKY GUARDIAN", titleStyle);
+            GUI.Label(new Rect(32, 26, 290, 22), "AR DRAGON SKY GUARDIAN", titleStyle);
 
             GUI.color = isHovering ? Color.yellow : Color.white;
-            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "TERBANG JELAJAH (Auto-Forward)";
-            GUI.Label(new Rect(32, 52, 280, 20), $"Status Mode : {flightMode}");
+            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "TERBANG JELAJAH (3D Navigasi)";
+            GUI.Label(new Rect(32, 48, 290, 20), $"Status Mode : {flightMode}");
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(32, 72, 280, 20), $"Kecepatan  : {speed:F1} m/s | Ketinggian: 15.0 m");
+            GUI.Label(new Rect(32, 68, 290, 20), $"Kecepatan  : {speed:F1} m/s  |  Ketinggian: {altitude:F1} m");
+
+            // Status Manuver Vertikal (T-Pose, Kepak Naik, Dive Turun)
+            string vertStatus;
+            Color vertCol;
+            if (pitchInput > 0.15f)
+            {
+                vertStatus = $"KEPAK SAYAP (NAIK ↑ {pitchInput * 100:F0}%)";
+                vertCol = new Color(0.2f, 1f, 0.4f);
+            }
+            else if (pitchInput < -0.15f)
+            {
+                vertStatus = $"DIVE POSE (MENUKIK TURUN ↓ {Mathf.Abs(pitchInput) * 100:F0}%)";
+                vertCol = new Color(1f, 0.55f, 0.1f);
+            }
+            else
+            {
+                vertStatus = "T-POSE (MELUNCUR STABIL)";
+                vertCol = new Color(0.3f, 0.9f, 1f);
+            }
+            GUI.color = vertCol;
+            GUI.Label(new Rect(32, 88, 290, 20), $"Vertikal   : {vertStatus}");
 
             // Bar Kemudi Belok (-100% s/d +100%)
             string steerTxt = (Mathf.Abs(turnInput) < 0.08f) ? "Lurus (Deadzone)" : (turnInput < 0 ? $"Kiri ({Mathf.Abs(turnInput) * 100:F0}%)" : $"Kanan ({turnInput * 100:F0}%)");
-            GUI.Label(new Rect(32, 92, 280, 20), $"Kemudi     : {steerTxt}");
+            GUI.color = Color.white;
+            GUI.Label(new Rect(32, 108, 290, 20), $"Kemudi     : {steerTxt}");
 
-            Rect barBg = new Rect(32, 115, 270, 10);
+            Rect barBg = new Rect(32, 130, 280, 10);
             GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
             GUI.DrawTexture(barBg, _barTexture);
 
@@ -324,22 +348,31 @@ namespace DragonWingAR.UI
             if (!flap && !water && !high) gestStr = "Aksi: Menjelajah";
 
             GUI.color = water ? Color.cyan : (flap ? Color.green : Color.yellow);
-            GUI.Label(new Rect(32, 130, 280, 20), gestStr);
+            GUI.Label(new Rect(32, 146, 290, 20), gestStr);
         }
 
         /// <summary>
-        /// Petunjuk kontrol cepat di bagian bawah layar.
+        /// Menggambar panduan kontrol singkat di bagian bawah layar.
         /// </summary>
         private void DrawControlsQuickGuide()
         {
-            Rect guideRect = new Rect(Screen.width * 0.5f - 260, Screen.height - 38, 520, 26);
-            GUI.color = new Color(0.08f, 0.08f, 0.12f, 0.75f);
-            GUI.DrawTexture(guideRect, _boxBgTexture);
-            DrawOutline(guideRect, 1, new Color(0.4f, 0.4f, 0.5f, 0.5f));
+            float width = 640f;
+            float height = 26f;
+            float x = (Screen.width - width) * 0.5f;
+            float y = Screen.height - height - 12f;
 
-            GUI.color = new Color(0.85f, 0.85f, 0.85f);
-            GUIStyle centerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 11 };
-            GUI.Label(guideRect, "Kontrol: Panah/A-D (Belok) | Spasi/1 (Kepak Sayap) | F/2 (Sembur Air) | R/3 (Embun)", centerStyle);
+            Rect bgRect = new Rect(x, y, width, height);
+            GUI.color = new Color(0.06f, 0.06f, 0.08f, 0.85f);
+            GUI.DrawTexture(bgRect, _barTexture);
+            DrawOutline(bgRect, 1, new Color(0.3f, 0.3f, 0.3f, 0.7f));
+
+            GUI.color = new Color(0.9f, 0.9f, 0.9f, 0.95f);
+            GUIStyle guideStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 11
+            };
+            GUI.Label(bgRect, "Kontrol: Panah/A-D (Belok) | W/Space/Kepak (NAIK ↑) | S/Dive (TURUN ↓) | T-Pose (Lurus) | F/2 (Air) | R/3 (Embun)", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)

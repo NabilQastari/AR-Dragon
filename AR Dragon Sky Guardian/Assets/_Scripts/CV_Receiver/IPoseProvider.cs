@@ -33,9 +33,12 @@ namespace DragonWingAR.CV
         bool IsWaterBreathing { get; }      // True jika mulut terbuka lebar atau gestur rapat tangan aktif
 
         // ==========================================
-        // Kemudi Terbang
+        // Kemudi Terbang & Ketinggian Vertikal
         // ==========================================
         float TurnInput { get; }            // -1.0f (belok kiri tajam) s/d +1.0f (belok kanan tajam)
+        float PitchInput { get; }           // -1.0f (menukik turun / dive) s/d +1.0f (kepak naik / climb)
+        bool IsTPose { get; }               // True jika pemain dalam T-pose (meluncur lurus mendatar)
+        bool IsDiving { get; }              // True jika pemain dalam pose menukik ke bawah
 
         // ==========================================
         // Status Gestur Pemulihan Desa

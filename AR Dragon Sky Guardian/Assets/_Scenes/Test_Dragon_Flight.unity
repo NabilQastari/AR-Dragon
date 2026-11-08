@@ -1470,16 +1470,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DragonWingAR.Controllers.DragonFlightController
   poseProviderSource: {fileID: 0}
   forwardSpeed: 12
-  fixedAltitudeY: 15
   yawTurnSpeed: 65
+  currentAltitude: 15
+  minAltitude: 4
+  maxAltitude: 45
+  climbSpeed: 8
+  diveSpeed: 10
+  altitudeSmoothSpeed: 4
   visualModel: {fileID: 2096366721}
   maxRollAngle: 35
-  rollSmoothSpeed: 8
+  maxPitchAngle: 20
+  attitudeSmoothSpeed: 8
   hoverRotateSpeed: 3.5
   hoverBobAmplitude: 0.4
   hoverBobFrequency: 2
   _isHovering: 0
   _currentTurnInput: 0
+  _currentPitchInput: 0
   _currentSpeed: 0
   _hoverLookTarget: {x: 0, y: 0, z: 0}
 --- !u!114 &1235239322
@@ -1503,6 +1510,9 @@ MonoBehaviour:
   _isConnected: 0
   _isPoseDetected: 0
   _turnInput: 0
+  _pitchInput: 0
+  _isTPose: 1
+  _isDiving: 0
   _smoothedMouth: 0
   _isWaterBreathing: 0
   _isFlapping: 0

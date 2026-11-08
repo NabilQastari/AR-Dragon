@@ -29,6 +29,7 @@ def main():
     try:
         while True:
             t += 0.05
+            cycle = t % 16.0  # Siklus 16 detik (T-Pose -> Naik -> T-Pose -> Dive)
 
             # Bahu statis
             ls = (0.40, 0.42)
@@ -36,12 +37,34 @@ def main():
             lh = (0.44, 0.72)
             rh = (0.56, 0.72)
 
-            # Osilasi pergelangan tangan (Simulasi belok & kepakan sayap)
-            wing_wave = math.sin(t * 3.0) * 0.22  # Naik turun di atas & bawah bahu
-            tilt_wave = math.cos(t * 1.5) * 0.14  # Miring kiri & kanan
+            tilt_wave = math.cos(t * 1.2) * 0.12  # Osilasi belok kiri/kanan halus
 
-            lw = (0.28, 0.42 + wing_wave + tilt_wave)
-            rw = (0.72, 0.42 + wing_wave - tilt_wave)
+            if cycle < 4.0:
+                # 1. T-POSE (Meluncur Lurus Mendatar)
+                mode_name = "T-POSE (MELUNCUR LEVEL)"
+                mode_color = (255, 230, 80)
+                lw = (0.22, 0.42 + tilt_wave)
+                rw = (0.78, 0.42 - tilt_wave)
+            elif cycle < 8.0:
+                # 2. KEPAK SAYAP (Naik / Climb)
+                mode_name = "KEPAK SAYAP (NAIK ↑)"
+                mode_color = (0, 255, 100)
+                flap_osc = math.sin(t * 5.0) * 0.22
+                lw = (0.26, 0.38 + flap_osc + tilt_wave)
+                rw = (0.74, 0.38 + flap_osc - tilt_wave)
+            elif cycle < 12.0:
+                # 3. T-POSE (Meluncur Lurus Mendatar)
+                mode_name = "T-POSE (MELUNCUR LEVEL)"
+                mode_color = (255, 230, 80)
+                lw = (0.22, 0.42 + tilt_wave)
+                rw = (0.78, 0.42 - tilt_wave)
+            else:
+                # 4. DIVE POSE (Menukik Turun)
+                mode_name = "DIVE POSE (TURUN ↓)"
+                mode_color = (0, 140, 255)
+                # Tangan ditarik ke bawah paha/pinggul
+                lw = (0.42, 0.78 + tilt_wave * 0.4)
+                rw = (0.58, 0.78 - tilt_wave * 0.4)
 
             # Simulasi buka mulut secara periodik
             mouth = 1.0 if (math.sin(t * 1.0) > 0.6) else 0.0
@@ -51,7 +74,6 @@ def main():
 
             # 2. Gambar frame sintetis untuk port 5053
             canvas = np.zeros((vh, vw, 3), dtype=np.uint8)
-            # Gradasi background biru gelap
             for y_line in range(vh):
                 canvas[y_line, :] = (int(15 + y_line * 0.1), int(20 + y_line * 0.08), int(35 + y_line * 0.15))
 
@@ -71,7 +93,7 @@ def main():
             cv2.line(canvas, p_lh, p_rh, (0, 255, 200), 2)
 
             is_above = (lw[1] < ls[1]) and (rw[1] < rs[1])
-            hand_col = (0, 255, 0) if is_above else (255, 60, 180)
+            hand_col = (0, 255, 0) if is_above else (0, 140, 255)
             cv2.circle(canvas, p_lw, 7, hand_col, -1)
             cv2.circle(canvas, p_rw, 7, hand_col, -1)
 
@@ -82,17 +104,16 @@ def main():
                 cv2.circle(canvas, (head_x, head_y + 4), 6, (0, 200, 255), -1)
 
             # Label status
-            cv2.putText(canvas, "TEST DUMMY VIDEO [UDP:5053]", (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 255), 1)
-            tilt_lbl = "BELOK KANAN" if (lw[1] > rw[1]) else "BELOK KIRI"
-            cv2.putText(canvas, f"STATUS: {tilt_lbl}", (10, 168), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 100), 1)
+            cv2.putText(canvas, f"MODE: {mode_name}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.40, mode_color, 1)
+            tilt_lbl = "BELOK KANAN" if (lw[1] > rw[1] + 0.05) else ("BELOK KIRI" if rw[1] > lw[1] + 0.05 else "LURUS")
+            cv2.putText(canvas, f"KEMUDI: {tilt_lbl}", (10, 168), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
 
             # Kirim frame sintetis
             video_sender.send_frame(canvas)
 
             # Print status ke terminal setiap ~0.5 detik
             if int(t * 20) % 10 == 0:
-                flap_dir = "DI ATAS BAHU" if is_above else "DI BAWAH BAHU"
-                print(f"[*] Mengirim -> Kemudi: {tilt_lbl} | Sayap: {flap_dir} | Mulut: {'BUKA' if mouth > 0.5 else 'TUTUP'}")
+                print(f"[*] Mengirim -> {mode_name} | Kemudi: {tilt_lbl} | Mulut: {'BUKA' if mouth > 0.5 else 'TUTUP'}")
 
             time.sleep(0.033) # ~30 FPS
     except KeyboardInterrupt:
