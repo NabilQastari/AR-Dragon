@@ -119,9 +119,9 @@ Selepas mencipta fail di atas, Agent wajib menulis tutorial jelas tentang:
    - `Assets/_Scripts/Controllers/VillageZoneController.cs`: mengesan kemasukan naga melalui `OnTriggerEnter`, mengaktifkan Auto-Hover, menyemak matematik gestur mengikut jenis desa (`Pollution_Desa1`, `Wildfire_Desa2`, `Drought_Desa3`), menambah `localProgress` sebanyak `+20f`/saat, dan melepaskan Auto-Hover apabila mencapai 100%.
 3. Bina Skrip Pembantu Editor `Assets/Editor/Session2_GreyboxBuilder.cs`:
    - Menu `[MenuItem("DragonWingAR/Sesi 2 - Bina Prototaip Greybox Scene")]` yang apabila diklik akan mencipta dan menyusun:
-     - `Island_Root` (Plane berskala besar di (0,0,0)).
+     - `Island_Root` (Plane dengan Scale (80, 1, 80) = 800 x 800 m (rasio 1:1) di (0,0,0), mewakili daratan abstrak besar yang grounded, bukan pulau terapung; lihat `konteks.md` bagian 2.4 dan ukuran detail di bagian 2.5).
      - `Dragon_Player` (Cube di (0, 15, -80)) lengkap dengan `UDPPoseReceiver`, `DragonFlightController`, `Rigidbody` (`IsKinematic = true`), dan `Main Camera`.
-     - 3 Silinder Zon Desa (`Village_1_Pollution`, `Village_2_Wildfire`, `Village_3_Drought`) lengkap dengan `SphereCollider` (`IsTrigger = true`, `Radius = 18f`) dan `VillageZoneController` di koordinat piawai.
+     - 3 Silinder Zon Desa (`Village_1_Pollution`, `Village_2_Wildfire`, `Village_3_Drought`) lengkap dengan `SphereCollider` (`IsTrigger = true`, `Radius = 18f`) dan `VillageZoneController` di koordinat piawai (sementara; koordinat final desa menyusul setelah desain desa dibahas, lihat `konteks.md` bagian 5).
 
 ### 👨‍💻 Tutorial Wajib untuk Pengguna (Sesi 2)
 
@@ -143,7 +143,7 @@ Agent wajib memberikan tutorial langkah demi langkah tentang:
 
 > Laksanakan sesi ini **HANYA** selepas pengguna mengesahkan Sesi 2 selesai.
 
-**Matlamat Sesi:** Menggantikan objek greybox dengan model 3D `.fbx` sebenar (atau model komposit low-poly jika ada aset yang belum siap) dan memasang sistem animasi Naga. Oleh sebab penyusunan model 3D dan Animator banyak melibatkan antara muka Unity Editor, Agent membina skrip penyambung animasi dan memberikan tutorial penuh pemasangan model 3D kepada pengguna.
+**Matlamat Sesi:** Menggantikan objek greybox dengan model 3D `.fbx` sebenar (daratan abstrak besar dengan danau, hutan, dan bukit sesuai `konteks.md` bagian 2.4; desa menyusul pada tahap desain desa) (atau model komposit low-poly jika ada aset yang belum siap) dan memasang sistem animasi Naga. Oleh sebab penyusunan model 3D dan Animator banyak melibatkan antara muka Unity Editor, Agent membina skrip penyambung animasi dan memberikan tutorial penuh pemasangan model 3D kepada pengguna.
 
 ### 🤖 Tugas Hermes Agent (Sesi 3)
 
