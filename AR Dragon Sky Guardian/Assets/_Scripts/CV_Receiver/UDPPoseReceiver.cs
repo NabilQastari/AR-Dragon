@@ -487,10 +487,13 @@ namespace DragonWingAR.CV
 #endif
         }
 
+        [Tooltip("Tampilkan teks debug teks lawas di pojok kiri atas")]
+        public bool showDebugGUI = false;
+
         private void OnGUI()
         {
-            // Panel info kecil di pojok kiri atas game view saat Play Mode
-            if (!Application.isPlaying) return;
+            // Panel info kecil di pojok kiri atas (hanya aktif jika showDebugGUI = true)
+            if (!Application.isPlaying || !showDebugGUI) return;
 
             GUI.color = _isConnected ? Color.green : (enableKeyboardFallback ? Color.yellow : Color.red);
             string status = _isConnected ? "TERHUBUNG (Python UDP)" : (enableKeyboardFallback ? "KEYBOARD FALLBACK AKTIF" : "TERPUTUS");

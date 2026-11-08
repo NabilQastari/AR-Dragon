@@ -28,7 +28,7 @@ namespace DragonWingAR.Controllers
 
         [Header("Parameter Terbang Vertikal (Naik & Turun)")]
         [Tooltip("Ketinggian naga saat ini")]
-        public float currentAltitude = 15f;
+        public float currentAltitude = 22f;
 
         /// <summary>
         /// Properti kompatibilitas untuk fixed altitude lama
@@ -36,10 +36,10 @@ namespace DragonWingAR.Controllers
         public float fixedAltitudeY { get => currentAltitude; set => currentAltitude = value; }
 
         [Tooltip("Ketinggian minimum di atas daratan")]
-        public float minAltitude = 4f;
+        public float minAltitude = 5f;
 
-        [Tooltip("Ketinggian maksimum jelajah")]
-        public float maxAltitude = 45f;
+        [Tooltip("Ketinggian maksimum jelajah (mampu melewati puncak gunung 120m)")]
+        public float maxAltitude = 140f;
 
         [Tooltip("Kecepatan menanjak naik saat Pose Y (m/s)")]
         public float climbSpeed = 10f;
@@ -103,10 +103,10 @@ namespace DragonWingAR.Controllers
             // Pastikan model visual terpisah agar roll & pitch visual tidak mengganggu arah maju
             SetupVisualModel();
 
-            // Set ketinggian awal naga
+            // Set ketinggian awal naga sesuai posisi awal
             if (currentAltitude <= 1f)
             {
-                currentAltitude = 15f;
+                currentAltitude = transform.position.y > 1f ? transform.position.y : 22f;
             }
             Vector3 initPos = transform.position;
             initPos.y = currentAltitude;

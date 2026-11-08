@@ -1471,9 +1471,9 @@ MonoBehaviour:
   poseProviderSource: {fileID: 0}
   forwardSpeed: 12
   yawTurnSpeed: 65
-  currentAltitude: 15
-  minAltitude: 4
-  maxAltitude: 45
+  currentAltitude: 22
+  minAltitude: 5
+  maxAltitude: 140
   climbSpeed: 8
   diveSpeed: 10
   altitudeSmoothSpeed: 4
@@ -1511,13 +1511,15 @@ MonoBehaviour:
   _isPoseDetected: 0
   _turnInput: 0
   _pitchInput: 0
+  _isYPose: 0
   _isTPose: 1
-  _isDiving: 0
+  _isAPose: 0
   _smoothedMouth: 0
   _isWaterBreathing: 0
   _isFlapping: 0
   _isHandsTogether: 0
   _isHandsHighUp: 0
+  showDebugGUI: 0
 --- !u!65 &1235239323
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1537,7 +1539,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 4, y: 2, z: 5}
+  m_Size: {x: 3.8, y: 2.2, z: 4.8}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!54 &1235239324
 Rigidbody:
@@ -2006,8 +2008,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2035695766}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.1305262, y: 0, z: 0, w: 0.9914449}
-  m_LocalPosition: {x: 0, y: 10, z: -28}
+  m_LocalRotation: {x: 0.104528464, y: 0, z: 0, w: 0.9945219}
+  m_LocalPosition: {x: 0, y: 2.8, z: -7.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2053,7 +2055,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 1000
+  far clip plane: 1500
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -2082,27 +2084,27 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1.5
+      value: 0.34288704
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1.5
+      value: 0.34288704
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1.5
+      value: 0.34288704
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -2.7745047
+      value: -0.63422775
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -7.4176006
+      value: -1.6955986
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 4.3117294
+      value: 0.9856262
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: aee3de2d456b12247913e586cc14899f, type: 3}
       propertyPath: m_LocalRotation.w
