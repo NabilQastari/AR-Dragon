@@ -74,11 +74,11 @@
   - Smoothing koordinat via `Vector2.Lerp` (kecepatan 12f) agar kontrol naga mulus tanpa tersentak.
   - **Keyboard Fallback Control**: Panah Kiri/Kanan & A/D untuk belok, tombol `1` (kepak sayap Desa 1), `2` / F (semburan air Desa 2), `3` / R (hujan embun Desa 3) agar Unity dapat langsung diuji dan dimainkan kapan pun tanpa kamera.
   - OnGUI HUD status koneksi dan telemetri langsung saat Play Mode.
-- [ ] **`DragonFlightController.cs`**:
+- [x] **`DragonFlightController.cs`**:
   - Gerak maju otomatis naga (`forwardSpeed = 12f`).
   - Menjaga ketinggian naga tetap stabil (`fixedY = 15f`).
-  - Mekanik belok Yaw dan Roll dinamis berdasarkan kemiringan tangan (`LeftWrist.y - RightWrist.y`).
-  - Sistem **Auto-Hover** (`SetHoverState(bool hover, Vector3 targetLookAt)`) saat berada di dalam area desa.
+  - Mekanik belok Yaw (65 deg/s) dan kemiringan visual Roll (`-turnInput * 35 deg`).
+  - Sistem **Auto-Hover** (`SetHoverState(bool hover, Vector3 targetLookAt)`) saat berada di dalam area desa dengan efek bobbing mengambang halus.
 - [ ] **`VillageZoneController.cs`**:
   - Deteksi trigger masuk/keluar desa via `OnTriggerEnter` / `OnTriggerExit`.
   - Verifikasi gestur spesifik tiap desa (Desa 1: Kepak Sayap, Desa 2: Sembur Air Naga, Desa 3: Hujan Embun).
