@@ -41,14 +41,14 @@ namespace DragonWingAR.Controllers
         [Tooltip("Ketinggian maksimum jelajah")]
         public float maxAltitude = 45f;
 
-        [Tooltip("Kecepatan menanjak naik saat kepakan sayap (m/s)")]
-        public float climbSpeed = 8f;
+        [Tooltip("Kecepatan menanjak naik saat Pose Y (m/s)")]
+        public float climbSpeed = 10f;
 
-        [Tooltip("Kecepatan menukik turun saat dive pose (m/s)")]
-        public float diveSpeed = 10f;
+        [Tooltip("Kecepatan menukik turun saat Pose A (m/s)")]
+        public float diveSpeed = 12f;
 
         [Tooltip("Kecepatan transisi smoothing ketinggian")]
-        public float altitudeSmoothSpeed = 4f;
+        public float altitudeSmoothSpeed = 8f;
 
         [Header("Model Visual & Kemiringan Dinamis")]
         [Tooltip("Transform child model naga untuk efek kemiringan visual (Banking Roll & Pitch)")]
@@ -58,10 +58,10 @@ namespace DragonWingAR.Controllers
         public float maxRollAngle = 35f;
 
         [Tooltip("Sudut kemiringan visual Pitch maksimal saat menanjak/menukik (derajat)")]
-        public float maxPitchAngle = 20f;
+        public float maxPitchAngle = 22f;
 
         [Tooltip("Kecepatan transisi kemiringan model visual")]
-        public float attitudeSmoothSpeed = 8f;
+        public float attitudeSmoothSpeed = 10f;
 
         [Header("Pengaturan Auto-Hover (Saat di Desa)")]
         [Tooltip("Kecepatan naga memutar badan menghadap pusat desa saat hovering")]

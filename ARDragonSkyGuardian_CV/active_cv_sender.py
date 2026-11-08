@@ -169,28 +169,22 @@ def main():
                         flap_count, flap_state_str, flap_freq, flap_power = flap_detector.update(lw, rw, ls, rs)
                         raw_diff, norm_tilt = compute_smooth_tilt(lw, rw, deadzone=0.035, max_tilt=0.25)
 
-            # 2. Deteksi Manuver Vertikal (T-Pose / Naik / Dive)
-            vert_mode_str = "T-POSE (MELUNCUR)"
+            # 2. Deteksi Manuver Vertikal Alfabet (Pose Y = NAIK, Pose T = LURUS, Pose A = TURUN)
+            vert_mode_str = "POSE T (LURUS)"
             vert_mode_color = (255, 230, 80)
             if pose_detected:
-                avg_sy = (ls[1] + rs[1]) * 0.5
-                avg_wy = (lw[1] + rw[1]) * 0.5
-                avg_hy = (lh[1] + rh[1]) * 0.5
-                w_span = abs(rw[0] - lw[0])
-                s_span = max(0.08, abs(rs[0] - ls[0]))
+                dy_l = lw[1] - ls[1]
+                dy_r = rw[1] - rs[1]
+                avg_dy = (dy_l + dy_r) * 0.5
 
-                is_dive = (avg_wy > avg_hy - 0.05 or avg_wy > avg_sy + 0.20) and (w_span < s_span * 1.6)
-                is_climb = (lw[1] < ls[1] - 0.02 and rw[1] < rs[1] - 0.02) or (flap_freq > 0.4)
-                is_tpose = (abs(lw[1] - ls[1]) < 0.12 and abs(rw[1] - rs[1]) < 0.12 and (w_span > s_span * 1.25))
-
-                if is_dive:
-                    vert_mode_str = "DIVE POSE (TURUN ↓)"
-                    vert_mode_color = (0, 140, 255)
-                elif is_climb:
-                    vert_mode_str = "KEPAK SAYAP (NAIK ↑)"
+                if (dy_l < -0.04 and dy_r < -0.04) or avg_dy < -0.05:
+                    vert_mode_str = "POSE Y (NAIK ↑)"
                     vert_mode_color = (0, 255, 100)
-                elif is_tpose:
-                    vert_mode_str = "T-POSE (LURUS MENDATAR)"
+                elif (dy_l > 0.05 and dy_r > 0.05) or avg_dy > 0.07:
+                    vert_mode_str = "POSE A (TURUN ↓)"
+                    vert_mode_color = (0, 140, 255)
+                else:
+                    vert_mode_str = "POSE T (LURUS MENDATAR)"
                     vert_mode_color = (255, 230, 80)
 
             # 3. Inferensi Mulut Terbuka via Crop Area Kepala

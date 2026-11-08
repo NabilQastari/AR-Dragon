@@ -254,11 +254,16 @@ namespace DragonWingAR.UI
                 DrawLine(rs, rh, 2, boneCol);
                 DrawLine(lh, rh, 2, boneCol);
 
-                // Sendi tangan (Hijau jika di atas bahu, magenta jika di bawah)
-                bool isAbove = lw.y < ls.y && rw.y < rs.y;
-                Color handCol = isAbove ? Color.green : Color.magenta;
-                DrawCircle(lw, 5, handCol);
-                DrawCircle(rw, 5, handCol);
+                // Sendi tangan
+                Color handCol = poseReceiver.IsYPose ? Color.green : (poseReceiver.IsAPose ? new Color(1f, 0.55f, 0f) : Color.cyan);
+                DrawCircle(lw, 6, handCol);
+                DrawCircle(rw, 6, handCol);
+
+                // Indikator Pose Alfabet Y - T - A
+                string poseLetter = poseReceiver.IsYPose ? "● POSE Y (NAIK ↑)" : (poseReceiver.IsAPose ? "● POSE A (TURUN ↓)" : "● POSE T (LURUS)");
+                GUI.color = handCol;
+                GUIStyle pStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperCenter, fontStyle = FontStyle.Bold, fontSize = 11 };
+                GUI.Label(new Rect(area.x, area.y + 4, area.width, 20), poseLetter, pStyle);
 
                 // Indikator semburan air
                 if (poseReceiver.IsWaterBreathing)
@@ -270,7 +275,7 @@ namespace DragonWingAR.UI
 
             GUI.color = new Color(0.7f, 0.7f, 0.7f, 0.8f);
             GUIStyle centerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
-            GUI.Label(new Rect(area.x, area.yMax - 22, area.width, 20), "Jalankan active_cv_sender.py untuk video", centerStyle);
+            GUI.Label(new Rect(area.x, area.yMax - 20, area.width, 20), "Y: Naik | T: Lurus | A: Turun", centerStyle);
         }
 
         /// <summary>
@@ -300,23 +305,23 @@ namespace DragonWingAR.UI
             GUI.color = Color.white;
             GUI.Label(new Rect(32, 68, 290, 20), $"Kecepatan  : {speed:F1} m/s  |  Ketinggian: {altitude:F1} m");
 
-            // Status Manuver Vertikal (T-Pose, Kepak Naik, Dive Turun)
+            // Status Manuver Vertikal Alfabet: Y = NAIK, T = LURUS, A = TURUN
             string vertStatus;
             Color vertCol;
-            if (pitchInput > 0.15f)
+            if (poseReceiver != null && poseReceiver.IsYPose)
             {
-                vertStatus = $"KEPAK SAYAP (NAIK ↑ {pitchInput * 100:F0}%)";
-                vertCol = new Color(0.2f, 1f, 0.4f);
+                vertStatus = $"POSE Y: NAIK ↑ (+{pitchInput * 100:F0}%)";
+                vertCol = new Color(0.1f, 1f, 0.4f);
             }
-            else if (pitchInput < -0.15f)
+            else if (poseReceiver != null && poseReceiver.IsAPose)
             {
-                vertStatus = $"DIVE POSE (MENUKIK TURUN ↓ {Mathf.Abs(pitchInput) * 100:F0}%)";
+                vertStatus = $"POSE A: TURUN ↓ ({pitchInput * 100:F0}%)";
                 vertCol = new Color(1f, 0.55f, 0.1f);
             }
             else
             {
-                vertStatus = "T-POSE (MELUNCUR STABIL)";
-                vertCol = new Color(0.3f, 0.9f, 1f);
+                vertStatus = "POSE T: LURUS MENDATAR";
+                vertCol = new Color(0.2f, 0.9f, 1f);
             }
             GUI.color = vertCol;
             GUI.Label(new Rect(32, 88, 290, 20), $"Vertikal   : {vertStatus}");
@@ -356,7 +361,7 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawControlsQuickGuide()
         {
-            float width = 640f;
+            float width = 680f;
             float height = 26f;
             float x = (Screen.width - width) * 0.5f;
             float y = Screen.height - height - 12f;
@@ -372,7 +377,7 @@ namespace DragonWingAR.UI
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 11
             };
-            GUI.Label(bgRect, "Kontrol: Panah/A-D (Belok) | W/Space/Kepak (NAIK ↑) | S/Dive (TURUN ↓) | T-Pose (Lurus) | F/2 (Air) | R/3 (Embun)", guideStyle);
+            GUI.Label(bgRect, "Kontrol Pose: [Y] Tangan Ke Atas (NAIK ↑) | [T] Mendatar (LURUS) | [A] Tangan Ke Bawah (TURUN ↓) | W/S/A/D Keyboard", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)

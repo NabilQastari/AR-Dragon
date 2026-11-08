@@ -15,7 +15,7 @@ def main():
     print("🚀 PENGIRIM PAKET UDP SINTETIS (TEST BENCH)")
     print("   - Target Pose UDP : 127.0.0.1:5052 (13 Float CSV)")
     print("   - Target Video PIP: 127.0.0.1:5053 (Synthetic Frame JPEG)")
-    print("   - Pola Animasi    : Osilasi Belok, Kepakan Sayap, & Buka Mulut")
+    print("   - Pola Alfabet    : POSE Y (Naik) -> POSE T (Lurus) -> POSE A (Turun)")
     print("   - Tekan Ctrl+C untuk berhenti")
     print("=" * 65)
 
@@ -29,7 +29,7 @@ def main():
     try:
         while True:
             t += 0.05
-            cycle = t % 16.0  # Siklus 16 detik (T-Pose -> Naik -> T-Pose -> Dive)
+            cycle = t % 16.0  # Siklus 16 detik (T-Pose -> Pose Y -> T-Pose -> Pose A)
 
             # Bahu statis
             ls = (0.40, 0.42)
@@ -37,34 +37,32 @@ def main():
             lh = (0.44, 0.72)
             rh = (0.56, 0.72)
 
-            tilt_wave = math.cos(t * 1.2) * 0.12  # Osilasi belok kiri/kanan halus
+            tilt_wave = math.cos(t * 1.2) * 0.10  # Osilasi belok kiri/kanan halus
 
             if cycle < 4.0:
-                # 1. T-POSE (Meluncur Lurus Mendatar)
-                mode_name = "T-POSE (MELUNCUR LEVEL)"
+                # 1. POSE T (Kedua tangan mendatar sejajar bahu -> Meluncur Lurus)
+                mode_name = "POSE T (LURUS MENDATAR)"
                 mode_color = (255, 230, 80)
-                lw = (0.22, 0.42 + tilt_wave)
-                rw = (0.78, 0.42 - tilt_wave)
+                lw = (0.20, 0.42 + tilt_wave)
+                rw = (0.80, 0.42 - tilt_wave)
             elif cycle < 8.0:
-                # 2. KEPAK SAYAP (Naik / Climb)
-                mode_name = "KEPAK SAYAP (NAIK ↑)"
+                # 2. POSE Y (Kedua tangan diangkat ke atas diagonal -> NAIK)
+                mode_name = "POSE Y (NAIK ↑)"
                 mode_color = (0, 255, 100)
-                flap_osc = math.sin(t * 5.0) * 0.22
-                lw = (0.26, 0.38 + flap_osc + tilt_wave)
-                rw = (0.74, 0.38 + flap_osc - tilt_wave)
+                lw = (0.24, 0.18 + tilt_wave)
+                rw = (0.76, 0.18 - tilt_wave)
             elif cycle < 12.0:
-                # 3. T-POSE (Meluncur Lurus Mendatar)
-                mode_name = "T-POSE (MELUNCUR LEVEL)"
+                # 3. POSE T (Meluncur Lurus Mendatar)
+                mode_name = "POSE T (LURUS MENDATAR)"
                 mode_color = (255, 230, 80)
-                lw = (0.22, 0.42 + tilt_wave)
-                rw = (0.78, 0.42 - tilt_wave)
+                lw = (0.20, 0.42 + tilt_wave)
+                rw = (0.80, 0.42 - tilt_wave)
             else:
-                # 4. DIVE POSE (Menukik Turun)
-                mode_name = "DIVE POSE (TURUN ↓)"
+                # 4. POSE A (Kedua tangan diarahkan ke bawah diagonal -> TURUN)
+                mode_name = "POSE A (TURUN ↓)"
                 mode_color = (0, 140, 255)
-                # Tangan ditarik ke bawah paha/pinggul
-                lw = (0.42, 0.78 + tilt_wave * 0.4)
-                rw = (0.58, 0.78 - tilt_wave * 0.4)
+                lw = (0.33, 0.64 + tilt_wave * 0.4)
+                rw = (0.67, 0.64 - tilt_wave * 0.4)
 
             # Simulasi buka mulut secara periodik
             mouth = 1.0 if (math.sin(t * 1.0) > 0.6) else 0.0
