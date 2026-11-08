@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using DragonWingAR.CV;
 using DragonWingAR.Controllers;
+using DragonWingAR.UI;
 
 namespace DragonWingAR.EditorTools
 {
@@ -128,7 +129,10 @@ namespace DragonWingAR.EditorTools
 
             flightCtrl.visualModel = visualChild.transform;
 
-            // 8. Buat Main Camera (Third Person Follow)
+            // 8. Pasang GUI & Preview Kamera PIP (Pojok Kanan Atas)
+            dragonRoot.AddComponent<InGameFlightHUD>();
+
+            // 9. Buat Main Camera (Third Person Follow)
             GameObject camGo = new GameObject("Main Camera");
             camGo.tag = "MainCamera";
             Camera cam = camGo.AddComponent<Camera>();

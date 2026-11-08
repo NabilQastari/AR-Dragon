@@ -360,10 +360,11 @@ namespace DragonWingAR.CV
                 {
                     _isHandsHighUp = true;
                 }
-            }
-#endif
 
-#if ENABLE_LEGACY_INPUT_MANAGER
+                return; // Selesai diproses oleh Input System baru, jangan jalankan legacy input
+            }
+#else
+            // Fallback Legacy Input Manager HANYA jika paket Input System tidak terpasang
             try
             {
                 // Belok Kiri / Kanan menggunakan Panah atau A / D
@@ -393,7 +394,7 @@ namespace DragonWingAR.CV
                     _isHandsHighUp = true;
                 }
             }
-            catch (InvalidOperationException)
+            catch (Exception)
             {
                 // Mencegah crash jika legacy input dinonaktifkan di Player Settings
             }
