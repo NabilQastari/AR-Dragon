@@ -67,12 +67,13 @@
 ---
 
 ### 🟡 Sesi 2: Jambatan UDP Unity & Prototaip Mekanik Terbang (Greybox) — [DALAM PENGERJAAN]
-- [ ] **`IPoseProvider.cs`**: Kontrak antarmuka C# penyedia data pose di Unity (`LeftWrist`, `RightWrist`, `LeftShoulder`, `RightShoulder`, `MouthOpen`, `IsFlapping`, dll).
-- [ ] **`UDPPoseReceiver.cs`**:
+- [x] **`IPoseProvider.cs`**: Kontrak antarmuka C# penyedia data pose di Unity (`LeftWrist`, `RightWrist`, `LeftShoulder`, `RightShoulder`, `MouthOpen`, `IsFlapping`, dll).
+- [x] **`UDPPoseReceiver.cs`**:
   - Background thread UDP listener pada port `5052`.
   - Parsing string 13-float CSV dengan format kebal regional (`CultureInfo.InvariantCulture`).
   - Smoothing koordinat via `Vector2.Lerp` (kecepatan 12f) agar kontrol naga mulus tanpa tersentak.
-  - **Keyboard Fallback Control**: Panah Kiri/Kanan untuk belok, tombol `1` (kepak sayap Desa 1), `2` (semburan air Desa 2), `3` (hujan embun Desa 3) agar Unity dapat langsung diuji dan dimainkan kapan pun tanpa kamera.
+  - **Keyboard Fallback Control**: Panah Kiri/Kanan & A/D untuk belok, tombol `1` (kepak sayap Desa 1), `2` / F (semburan air Desa 2), `3` / R (hujan embun Desa 3) agar Unity dapat langsung diuji dan dimainkan kapan pun tanpa kamera.
+  - OnGUI HUD status koneksi dan telemetri langsung saat Play Mode.
 - [ ] **`DragonFlightController.cs`**:
   - Gerak maju otomatis naga (`forwardSpeed = 12f`).
   - Menjaga ketinggian naga tetap stabil (`fixedY = 15f`).
