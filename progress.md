@@ -1,8 +1,8 @@
 # 📈 PROGRESS PROJEK: AR DRAGON SKY GUARDIAN (v3.0)
 
-> **Status Saat Ini:** Sesi 1 Selesai (Model YOLOv8n-pose Resmi Dikunci & Dioptimalkan ke Ultra-Accuracy), Siap Masuk ke Sesi 2  
+> **Status Saat Ini:** Sesi 2 Aktif (Pembangunan Jambatan UDP Unity & Prototaip Mekanik Terbang Greybox)  
 > **Terakhir Diperbarui:** 2026-11-08  
-> **Rujukan Utama:** [`konteks.md`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/konteks.md) & [`prd.md`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/prd.md)
+> **Rujukan Utama:** [`konteks.md`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/konteks.md), [`prd.md`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/prd.md), & [`GDD_Pulau.md`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/GDD_Pulau.md)
 
 ---
 
@@ -11,9 +11,9 @@
 | Tahap / Sesi | Ruang Lingkup | Status | Keterangan & Hasil |
 | :--- | :--- | :---: | :--- |
 | **Tahap 0** | Setup Manual & Environment Awal | ✅ **SELESAI (100%)** | Unity 2022.3 LTS (URP) diset ke `.NET Framework` & `Run In Background`. Python 3.10 `venv` terkonfigurasi dengan CUDA 12, PyTorch `2.7.1+cu118`, Git initialized dengan `.gitignore`. |
-| **Sesi 1** | Ujian & Pemilihan Model Computer Vision (Python) | ✅ **SELESAI (100%)** — *Locked* | **YOLOv8n-pose (CUDA GPU)** resmi dipilih & di-upgrade ke tingkat **Ultra-Accuracy** (Primary Player Locking, Dynamic Biometrics Clamping, Hysteresis Flap State Machine, Deadzone Steering, latensi ~12 ms). Skrip produksi [`active_cv_sender.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/active_cv_sender.py) telah selesai dibuat. |
-| **Sesi 2** | Jambatan UDP Unity & Prototaip Mekanik Terbang (Greybox) | ⏳ **BERIKUTNYA** | Siap dikerjakan: script C# UDP receiver & smoothing (`UDPPoseReceiver.cs`), kontrol naga auto-forward & tilt (`DragonFlightController.cs`), trigger zon desa (`VillageZoneController.cs`), serta menu 1-klik builder `Session2_GreyboxBuilder.cs`. |
-| **Sesi 3** | Integrasi Model 3D, Lingkungan Pulau, & Animasi Naga | ⏸️ Belum Dimulai | Aset 3D awal sudah tersedia di folder `Assets AR Dragon Sky Guardian/` (`Nagcu.blend`, `pohon.blend`, `rumah.blend`). |
+| **Sesi 1** | Ujian & Pemilihan Model Computer Vision (Python) | ✅ **SELESAI (100%)** — *Locked* | **YOLOv8n-pose (CUDA GPU)** resmi dipilih & di-upgrade ke tingkat **Ultra-Accuracy** (Primary Player Locking, Dynamic Biometrics Clamping, Hysteresis Flap State Machine, Deadzone Steering, latensi ~12.5 ms). Modul produksi [`active_cv_sender.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/active_cv_sender.py) telah selesai dibuat. |
+| **Sesi 2** | Jambatan UDP Unity & Prototaip Mekanik Terbang (Greybox) | 🟡 **SEDANG BERJALAN** | Membangun pondasi gameplay di Unity: script C# UDP receiver & smoothing (`UDPPoseReceiver.cs`), kontrol naga auto-forward & tilt (`DragonFlightController.cs`), trigger zon desa (`VillageZoneController.cs`), serta generator greybox 1-klik `Session2_GreyboxBuilder.cs`. |
+| **Sesi 3** | Integrasi Model 3D, Lingkungan Pulau, & Animasi Naga | ⏸️ Belum Dimulai | Aset 3D awal sudah tersedia di folder `Assets AR Dragon Sky Guardian/` (`Nagcu.blend`, `pohon.blend`, `rumah.blend`, `pulau.blend`). |
 | **Sesi 4** | Dynamic Environment, Particle Systems, & Progres Desa | ⏸️ Belum Dimulai | Efek asap polusi Desa 1, kebakaran Desa 2, dan kekeringan -> hijau Desa 3. |
 | **Sesi 5** | GameManager, Scoring Bintang, Audio, & Final Build | ⏸️ Belum Dimulai | Integrasi loop game, UI/HUD, transisi level, dan build executable Standalone PC. |
 
@@ -62,42 +62,36 @@
   - [`test_yolopose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_yolopose.py) (YOLOv8n-pose CUDA GPU - *Ultra Accuracy*)
   - [`test_rtmpose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_rtmpose.py) (RTMPose via rtmlib + ONNX Runtime GPU CUDA)
 - [x] **`cv_benchmark_runner.py`**: Skrip benchmark otomatis 15 detik/model.
-- [x] **Hasil Benchmark Pengguna (`cv_benchmark_report.txt` per 2026-10-26):**
-
-| Model | Avg FPS | Min/Max FPS | Latensi (ms) | Jitter (ms) | Analisis Karakteristik |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **MediaPipe Pose (CPU Lite)** | 8.1 | 4 / 21 | **35.6** | 18.02 | Latensi komputasi paling rendah (35.6 ms), namun jitter fluktuatif (18 ms). |
-| **YOLOv8n-pose (CUDA GPU)** | 8.0 | 7 / 9 | **39.7** | **7.53** | **Paling stabil!** Jitter terendah (7.53 ms), rentang FPS sangat konsisten (7–9 FPS), latensi cepat (39.7 ms). Sangat direkomendasikan. |
-| **RTMPose (rtmlib + ONNX CUDA)** | 8.1 | 6 / 12 | 60.5 | 15.50 | Latensi lebih tinggi (60.5 ms) karena overhead bridging ONNX Runtime. |
-
-> **Model Terpilih Resmi:** **YOLOv8n-pose (CUDA GPU)** dikunci sebagai modul Computer Vision utama.
+- [x] **Model Terpilih Resmi**: **YOLOv8n-pose (CUDA GPU)** dikunci sebagai modul Computer Vision utama.
 
 ---
 
-## 3. Rencana Kerja Selanjutnya: Sesi 2 (Unity UDP Bridge & Greybox)
-
-Sesi 1 telah tuntas dan model YOLOv8n-pose telah dikunci. Langkah selanjutnya pada **Sesi 2**:
-1. **Verifikasi Jalur UDP:** Menguji transmisi paket dari `active_cv_sender.py` ke Unity.
-2. **C# Scripting di Unity:**
-   - `Assets/_Scripts/CV_Receiver/IPoseProvider.cs` & `UDPPoseReceiver.cs`: Pembaca socket port 5052 di background thread, parsing InvariantCulture, smoothing `Vector2.Lerp` (speed 12f), dan fallback kontrol keyboard (Panah Kiri/Kanan & tombol 1, 2, 3).
-   - `Assets/_Scripts/Controllers/DragonFlightController.cs`: Maju otomatis (`speed = 12f`), ketinggian tetap (`Y = 15f`), belok yaw/roll berdasarkan selisih wrist Y (`LeftWrist.y - RightWrist.y`), dan sistem auto-hover saat masuk desa.
-   - `Assets/_Scripts/Controllers/VillageZoneController.cs`: Deteksi trigger masuk/keluar desa, verifikasi gestur (Kepak Sayap Desa 1, Sembur Air Desa 2, Hujan Embun Desa 3), kenaikan progres `+20f/s`.
-3. **Editor 1-Click Builder:**
-   - `Assets/Editor/Session2_GreyboxBuilder.cs` dengan menu `[MenuItem("DragonWingAR/Sesi 2 - Bina Prototaip Greybox Scene")]` untuk instansiasi otomatis `Island_Root`, `Dragon_Player` (beserta Main Camera), dan 3 trigger zon desa di koordinat standar, disimpan ke `Assets/_Scenes/2_MainIslandScene.unity`.
-1. **Python:** Membuat [`active_cv_sender.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/active_cv_sender.py) yang mengunci model pilihan agar siap dijalankan berdampingan dengan Unity.
-2. **C# Scripting di Unity:**
-   - `Assets/_Scripts/CV_Receiver/IPoseProvider.cs` & `UDPPoseReceiver.cs`: Pembaca socket port 5052 di background thread, parsing InvariantCulture, smoothing `Vector2.Lerp` (speed 12f), dan fallback kontrol keyboard (Panah Kiri/Kanan & tombol 1, 2, 3).
-   - `Assets/_Scripts/Controllers/DragonFlightController.cs`: Maju otomatis (`speed = 12f`), ketinggian tetap (`Y = 15f`), belok yaw/roll berdasarkan selisih wrist Y (`LeftWrist.y - RightWrist.y`), dan sistem auto-hover saat masuk desa.
-   - `Assets/_Scripts/Controllers/VillageZoneController.cs`: Deteksi trigger masuk/keluar desa, verifikasi gestur (Kepak Sayap Desa 1, Sembur Air Desa 2, Hujan Embun Desa 3), kenaikan progres `+20f/s`.
-3. **Editor 1-Click Builder:**
-   - `Assets/Editor/Session2_GreyboxBuilder.cs` dengan menu `[MenuItem("DragonWingAR/Sesi 2 - Bina Prototaip Greybox Scene")]` untuk instansiasi otomatis `Island_Root`, `Dragon_Player` (beserta Main Camera), dan 3 trigger zon desa di koordinat standar, disimpan ke `Assets/_Scenes/2_MainIslandScene.unity`.
+### 🟡 Sesi 2: Jambatan UDP Unity & Prototaip Mekanik Terbang (Greybox) — [DALAM PENGERJAAN]
+- [ ] **`IPoseProvider.cs`**: Kontrak antarmuka C# penyedia data pose di Unity (`LeftWrist`, `RightWrist`, `LeftShoulder`, `RightShoulder`, `MouthOpen`, `IsFlapping`, dll).
+- [ ] **`UDPPoseReceiver.cs`**:
+  - Background thread UDP listener pada port `5052`.
+  - Parsing string 13-float CSV dengan format kebal regional (`CultureInfo.InvariantCulture`).
+  - Smoothing koordinat via `Vector2.Lerp` (kecepatan 12f) agar kontrol naga mulus tanpa tersentak.
+  - **Keyboard Fallback Control**: Panah Kiri/Kanan untuk belok, tombol `1` (kepak sayap Desa 1), `2` (semburan air Desa 2), `3` (hujan embun Desa 3) agar Unity dapat langsung diuji dan dimainkan kapan pun tanpa kamera.
+- [ ] **`DragonFlightController.cs`**:
+  - Gerak maju otomatis naga (`forwardSpeed = 12f`).
+  - Menjaga ketinggian naga tetap stabil (`fixedY = 15f`).
+  - Mekanik belok Yaw dan Roll dinamis berdasarkan kemiringan tangan (`LeftWrist.y - RightWrist.y`).
+  - Sistem **Auto-Hover** (`SetHoverState(bool hover, Vector3 targetLookAt)`) saat berada di dalam area desa.
+- [ ] **`VillageZoneController.cs`**:
+  - Deteksi trigger masuk/keluar desa via `OnTriggerEnter` / `OnTriggerExit`.
+  - Verifikasi gestur spesifik tiap desa (Desa 1: Kepak Sayap, Desa 2: Sembur Air Naga, Desa 3: Hujan Embun).
+  - Peningkatan progres desa `+20%/detik` saat gestur aktif.
+  - Pelepasan Auto-Hover secara otomatis saat progres desa mencapai 100%.
+- [ ] **`Session2_GreyboxBuilder.cs`**:
+  - Menu Editor Unity 1-klik: `DragonWingAR -> Sesi 2 - Bina Prototaip Greybox Scene`.
+  - Otomatis membuat scene `Assets/_Scenes/2_MainIslandScene.unity` lengkap dengan `Island_Root`, `Dragon_Player` (beserta kamera Third Person Follow), dan 3 zona desa kubus prototaip transparan.
 
 ---
 
-## 4. Status Aset Pendukung (Persiapan Sesi 3)
+## 3. Status Aset Pendukung (Persiapan Sesi 3)
 Aset 3D Blender yang telah disiapkan di folder `Assets AR Dragon Sky Guardian/`:
 - `Nagcu.blend`: Model naga utama (pemain)
 - `pulau.blend`: Model pulau terapung utama (`Island_Root`)
 - `pohon.blend`: Model vegetasi untuk pulau terapung
 - `rumah.blend`: Model desa untuk 3 zona pemulihan
-
