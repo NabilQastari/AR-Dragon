@@ -117,6 +117,33 @@ namespace DragonWingAR.EditorTools
                 visualChild.transform.localPosition = Vector3.zero;
                 visualChild.transform.localRotation = Quaternion.identity;
                 visualChild.transform.localScale = Vector3.one * 1.5f; // Skala naga proporsional
+
+                // Nonaktifkan bidang referensi 2D sketch dari Blender (Plane, Plane.001, Plane.002, dll)
+                foreach (Transform t in visualChild.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t.name.StartsWith("Plane"))
+                    {
+                        t.gameObject.SetActive(false);
+                    }
+                }
+
+                // Hitung titik pusat bound naga agar tepat berada di tengah Dragon_Player
+                Renderer[] renderers = visualChild.GetComponentsInChildren<Renderer>(true);
+                if (renderers.Length > 0)
+                {
+                    Bounds b = new Bounds(visualChild.transform.position, Vector3.zero);
+                    bool first = true;
+                    foreach (var r in renderers)
+                    {
+                        if (r.gameObject.activeInHierarchy)
+                        {
+                            if (first) { b = r.bounds; first = false; }
+                            else b.Encapsulate(r.bounds);
+                        }
+                    }
+                    Vector3 diff = b.center - dragonRoot.transform.position;
+                    visualChild.transform.position -= diff;
+                }
             }
             else
             {
@@ -132,7 +159,7 @@ namespace DragonWingAR.EditorTools
             // 8. Pasang GUI & Preview Kamera PIP (Pojok Kanan Atas)
             dragonRoot.AddComponent<InGameFlightHUD>();
 
-            // 9. Buat Main Camera (Third Person Follow)
+            // 9. Buat Main Camera (Third Person Follow yang lapang)
             GameObject camGo = new GameObject("Main Camera");
             camGo.tag = "MainCamera";
             Camera cam = camGo.AddComponent<Camera>();
@@ -140,8 +167,8 @@ namespace DragonWingAR.EditorTools
 
             // Letakkan kamera sebagai child Dragon_Player (Third-Person View)
             camGo.transform.SetParent(dragonRoot.transform, false);
-            camGo.transform.localPosition = new Vector3(0f, 4f, -14f);
-            camGo.transform.localRotation = Quaternion.Euler(12f, 0f, 0f);
+            camGo.transform.localPosition = new Vector3(0f, 10f, -28f);
+            camGo.transform.localRotation = Quaternion.Euler(15f, 0f, 0f);
 
             // 9. Simpan Scene ke Assets/_Scenes/Test_Dragon_Flight.unity
             string scenePath = "Assets/_Scenes/Test_Dragon_Flight.unity";
@@ -149,16 +176,102 @@ namespace DragonWingAR.EditorTools
 
             Selection.activeGameObject = dragonRoot;
 
-            Debug.Log($"<color=#00FF88>[DragonWingAR]</color> Berhasil membuat Scene Uji Terbang Naga: {scenePath}");
-            EditorUtility.DisplayDialog("Setup Scene Terbang Naga 3D Berhasil!",
-                "Scene Uji Terbang Naga 3D (Nagcu) telah berhasil dibangun!\n\n" +
-                "Lokasi Scene: Assets/_Scenes/Test_Dragon_Flight.unity\n\n" +
-                "Cara Menguji Langsung:\n" +
-                "1. Klik tombol PLAY (▶️) di Unity.\n" +
-                "2. Naga akan otomatis terbang maju di ketinggian 15 meter.\n" +
-                "3. Belok menggunakan Panah Kiri/Kanan (Keyboard) ATAU Webcam (active_cv_sender.py)!\n" +
-                "4. Perhatikan model naga akan condong miring (roll) saat berbelok!",
-                "Mulai Uji Terbang!");
+            Debug.Log($"<color=#00FF88>[DragonWingAR]</color> Berhasil membuat dan menyimpan Scene Uji Terbang Naga: {scenePath}");
+        }
+
+        [MenuItem("DragonWingAR/Inject Naga & HUD ke Scene Aktif Ini")]
+        public static void InjectDragonToActiveScene()
+        {
+            GameObject existing = GameObject.Find("Dragon_Player");
+            if (existing != null)
+            {
+                Selection.activeGameObject = existing;
+                Debug.Log("<color=#00FF88>[DragonWingAR]</color> Dragon_Player sudah ada di scene aktif ini.");
+                return;
+            }
+
+            // Muat Model Naga (Nagcu)
+            GameObject dragonPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/Nagcu.fbx");
+            if (dragonPrefab == null)
+            {
+                dragonPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/Nagcu.blend");
+            }
+
+            GameObject dragonRoot = new GameObject("Dragon_Player");
+            dragonRoot.transform.position = new Vector3(0f, 15f, 0f);
+
+            Rigidbody rb = dragonRoot.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+
+            BoxCollider col = dragonRoot.AddComponent<BoxCollider>();
+            col.center = Vector3.zero;
+            col.size = new Vector3(4f, 2f, 5f);
+
+            UDPPoseReceiver udpReceiver = dragonRoot.AddComponent<UDPPoseReceiver>();
+            udpReceiver.port = 5052;
+            udpReceiver.smoothingSpeed = 12f;
+            udpReceiver.enableKeyboardFallback = true;
+
+            DragonFlightController flightCtrl = dragonRoot.AddComponent<DragonFlightController>();
+            flightCtrl.forwardSpeed = 12f;
+            flightCtrl.fixedAltitudeY = 15f;
+            flightCtrl.yawTurnSpeed = 65f;
+            flightCtrl.maxRollAngle = 35f;
+
+            GameObject visualChild;
+            if (dragonPrefab != null)
+            {
+                visualChild = (GameObject)PrefabUtility.InstantiatePrefab(dragonPrefab, dragonRoot.transform);
+                visualChild.name = "Visual_Dragon";
+                visualChild.transform.localPosition = Vector3.zero;
+                visualChild.transform.localRotation = Quaternion.identity;
+                visualChild.transform.localScale = Vector3.one * 1.5f;
+
+                foreach (Transform t in visualChild.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t.name.StartsWith("Plane")) t.gameObject.SetActive(false);
+                }
+
+                Renderer[] renderers = visualChild.GetComponentsInChildren<Renderer>(true);
+                if (renderers.Length > 0)
+                {
+                    Bounds b = new Bounds(visualChild.transform.position, Vector3.zero);
+                    bool first = true;
+                    foreach (var r in renderers)
+                    {
+                        if (r.gameObject.activeInHierarchy)
+                        {
+                            if (first) { b = r.bounds; first = false; }
+                            else b.Encapsulate(r.bounds);
+                        }
+                    }
+                    Vector3 diff = b.center - dragonRoot.transform.position;
+                    visualChild.transform.position -= diff;
+                }
+            }
+            else
+            {
+                visualChild = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                visualChild.name = "Visual_Dragon_Placeholder";
+                visualChild.transform.SetParent(dragonRoot.transform, false);
+            }
+
+            flightCtrl.visualModel = visualChild.transform;
+            dragonRoot.AddComponent<InGameFlightHUD>();
+
+            // Hubungkan atau buat Main Camera
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                mainCam.transform.SetParent(dragonRoot.transform, false);
+                mainCam.transform.localPosition = new Vector3(0f, 10f, -28f);
+                mainCam.transform.localRotation = Quaternion.Euler(15f, 0f, 0f);
+            }
+
+            Selection.activeGameObject = dragonRoot;
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            Debug.Log("<color=#00FF88>[DragonWingAR]</color> Berhasil meng-inject Dragon_Player & Flight HUD ke Scene aktif!");
         }
     }
 }
