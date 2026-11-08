@@ -82,8 +82,9 @@ namespace DragonWingAR.CV
 
         // Thread-safe raw data buffer
         private readonly object _dataLock = new object();
+        private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private long _lastPacketMs = -999999;
         private bool _hasNewPacket = false;
-        private double _lastPacketReceivedTime = 0;
         private Vector2 _rawLS, _rawRS, _rawLW, _rawRW, _rawLH, _rawRH;
         private float _rawMouth = 0f;
 
@@ -232,15 +233,15 @@ namespace DragonWingAR.CV
                 // Elemen ke-13 adalah skor bukaan mulut
                 _rawMouth = (tokens.Length >= 13) ? v[12] : 0f;
 
-                _lastPacketReceivedTime = Time.realtimeSinceStartupAsDouble;
+                _lastPacketMs = _stopwatch.ElapsedMilliseconds;
                 _hasNewPacket = true;
             }
         }
 
         private void Update()
         {
-            double now = Time.realtimeSinceStartupAsDouble;
-            bool hadRecentPacket = (now - _lastPacketReceivedTime) <= timeoutSeconds;
+            long nowMs = _stopwatch.ElapsedMilliseconds;
+            bool hadRecentPacket = (nowMs - _lastPacketMs) <= (long)(timeoutSeconds * 1000f);
 
             Vector2 targetLS, targetRS, targetLW, targetRW, targetLH, targetRH;
             float targetMouth;
