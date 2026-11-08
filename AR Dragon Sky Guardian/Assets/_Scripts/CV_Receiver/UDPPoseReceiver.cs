@@ -5,6 +5,9 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace DragonWingAR.CV
 {
@@ -321,35 +324,79 @@ namespace DragonWingAR.CV
         /// <summary>
         /// Menyediakan kontrol alternatif melalui keyboard sehingga developer/penguji
         /// dapat mengendalikan naga dan menguji 3 desa kapan saja tanpa webcam.
+        /// Mendukung Input System baru (Keyboard.current) maupun Legacy Input Manager.
         /// </summary>
         private void HandleKeyboardFallback()
         {
-            // Belok Kiri / Kanan menggunakan Panah atau A / D
-            float horizontalAxis = Input.GetAxisRaw("Horizontal");
-            if (Mathf.Abs(horizontalAxis) > 0.01f)
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            if (kb != null)
             {
-                _turnInput = Mathf.Clamp(horizontalAxis, -1f, 1f);
-            }
+                float h = 0f;
+                if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) h -= 1f;
+                if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) h += 1f;
+                if (Mathf.Abs(h) > 0.01f)
+                {
+                    _turnInput = Mathf.Clamp(h, -1f, 1f);
+                }
 
-            // Tombol 1 atau Space: Simulasi Kepakan Sayap (Desa 1)
-            if (Input.GetKey(KeyCode.Alpha1) || Input.GetKey(KeyCode.Keypad1) || Input.GetKey(KeyCode.Space))
-            {
-                _isFlapping = true;
-                _flapTimer = 0.4f;
-            }
+                // Tombol 1 atau Space: Simulasi Kepakan Sayap (Desa 1)
+                if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed || kb.spaceKey.isPressed)
+                {
+                    _isFlapping = true;
+                    _flapTimer = 0.4f;
+                }
 
-            // Tombol 2 atau F: Simulasi Semburan Air Naga (Desa 2)
-            if (Input.GetKey(KeyCode.Alpha2) || Input.GetKey(KeyCode.Keypad2) || Input.GetKey(KeyCode.F))
-            {
-                _isWaterBreathing = true;
-                _smoothedMouth = 1.0f;
-            }
+                // Tombol 2 atau F: Simulasi Semburan Air Naga (Desa 2)
+                if (kb.digit2Key.isPressed || kb.numpad2Key.isPressed || kb.fKey.isPressed)
+                {
+                    _isWaterBreathing = true;
+                    _smoothedMouth = 1.0f;
+                }
 
-            // Tombol 3 atau R: Simulasi Panggil Hujan Embun (Desa 3)
-            if (Input.GetKey(KeyCode.Alpha3) || Input.GetKey(KeyCode.Keypad3) || Input.GetKey(KeyCode.R))
-            {
-                _isHandsHighUp = true;
+                // Tombol 3 atau R: Simulasi Panggil Hujan Embun (Desa 3)
+                if (kb.digit3Key.isPressed || kb.numpad3Key.isPressed || kb.rKey.isPressed)
+                {
+                    _isHandsHighUp = true;
+                }
             }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+            try
+            {
+                // Belok Kiri / Kanan menggunakan Panah atau A / D
+                float horizontalAxis = Input.GetAxisRaw("Horizontal");
+                if (Mathf.Abs(horizontalAxis) > 0.01f)
+                {
+                    _turnInput = Mathf.Clamp(horizontalAxis, -1f, 1f);
+                }
+
+                // Tombol 1 atau Space: Simulasi Kepakan Sayap (Desa 1)
+                if (Input.GetKey(KeyCode.Alpha1) || Input.GetKey(KeyCode.Keypad1) || Input.GetKey(KeyCode.Space))
+                {
+                    _isFlapping = true;
+                    _flapTimer = 0.4f;
+                }
+
+                // Tombol 2 atau F: Simulasi Semburan Air Naga (Desa 2)
+                if (Input.GetKey(KeyCode.Alpha2) || Input.GetKey(KeyCode.Keypad2) || Input.GetKey(KeyCode.F))
+                {
+                    _isWaterBreathing = true;
+                    _smoothedMouth = 1.0f;
+                }
+
+                // Tombol 3 atau R: Simulasi Panggil Hujan Embun (Desa 3)
+                if (Input.GetKey(KeyCode.Alpha3) || Input.GetKey(KeyCode.Keypad3) || Input.GetKey(KeyCode.R))
+                {
+                    _isHandsHighUp = true;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Mencegah crash jika legacy input dinonaktifkan di Player Settings
+            }
+#endif
         }
 
         private void OnGUI()
