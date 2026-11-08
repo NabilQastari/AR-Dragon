@@ -44,6 +44,11 @@
 ### ✅ Sesi 1: Ujian & Pemilihan Model Computer Vision
 - [x] **`udp_sender.py`**: Modul pengirim data socket UDP ke `127.0.0.1:5052` dengan format CSV 13-float ternormalisasi (`0.0000` - `1.0000`):
   `LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN`
+- [x] **Perbaikan & Optimalisasi Lengkap RTMPose (`test_rtmpose.py`)**:
+  - **Injeksi DLL CUDA 12 & cuDNN 9**: Menyematkan seluruh direktori `site-packages/nvidia/*/bin` ke `PATH` dan `os.add_dll_directory` sebelum inisialisasi ONNX Runtime, melenyapkan error cuDNN dan mencegah silent fallback ke CPU (latensi terpangkas dari 251 ms menjadi 28 ms / 35 FPS di RTX 3050).
+  - **Perbaikan Bug Variabel**: Memperbaiki `raw_le_x` & `raw_re_x` ke koordinat siku aktual `raw_le` & `raw_re`.
+  - **Keypoint Confidence Validation**: Menambahkan filter confidence threshold (`score > 0.25`) pada keypoints bahu agar RTMPose tidak berhalusinasi mendeteksi pose palsu saat pengguna keluar kamera.
+  - **Zero-Delay Water Breath**: Integrasi dynamic head-crop mouth tracker (~5 ms) dengan Schmitt trigger hysteresis.
 - [x] **Zero-Delay Head-Cropping Architecture**:
   - Mengeliminasi beban 240 ms pemindaian wajah full-frame 720p dengan memotong area kepala secara dinamis (~200x200 px).
   - Latensi komputasi total anjlok dari **258 ms (3.9 FPS) ke 20.7 ms (48.4 FPS)**.
@@ -51,7 +56,7 @@
 - [x] **Skrip Uji Interaktif Webcam** (720p @ 30 FPS, horizontal mirror `cv2.flip(frame, 1)`, visualisasi skeleton overlay, pembacaan FPS, latensi, dan deteksi gestur real-time):
   - [`test_mediapipe.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_mediapipe.py) (MediaPipe Pose Landmarker)
   - [`test_yolopose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_yolopose.py) (YOLOv8n-pose CUDA GPU)
-  - [`test_rtmpose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_rtmpose.py) (RTMPose via rtmlib + ONNX Runtime GPU)
+  - [`test_rtmpose.py`](file:///d:/Fauzih/Kuliah/SEMESTER%20V/Proyek%20Multimedia%20dan%20Game/AR%20Dragon/ARDragonSkyGuardian_CV/test_rtmpose.py) (RTMPose via rtmlib + ONNX Runtime GPU CUDA)
 - [x] **`cv_benchmark_runner.py`**: Skrip benchmark otomatis 15 detik/model.
 - [x] **Hasil Benchmark Pengguna (`cv_benchmark_report.txt` per 2026-10-26):**
 

@@ -29,6 +29,7 @@ if os.path.isdir(venv_nvidia):
                 pass
 
 import onnxruntime as ort
+ort.set_default_logger_severity(3)
 ort.preload_dlls()
 from rtmlib import Body
 
@@ -41,7 +42,13 @@ def main():
     print("[*] Menginisialisasi RTMPose (mode='lightweight', backend='onnxruntime', device='cuda')...")
     try:
         body = Body(mode='lightweight', backend='onnxruntime', device='cuda')
-        device_name = "CUDA (RTX 3050)"
+        actual_ep = body.pose_model.session.get_providers()
+        if 'CUDAExecutionProvider' in actual_ep:
+            device_name = "CUDA (RTX 3050)"
+            print(f"[OK] RTMPose aktif dengan CUDA GPU Acceleration ({actual_ep[0]})")
+        else:
+            device_name = "CPU (Fallback)"
+            print(f"[!] Warning: CUDA tidak aktif di session, berjalan di: {actual_ep}")
     except Exception as e:
         print(f"[!] Gagal inisialisasi CUDA, fallback ke CPU: {e}")
         body = Body(mode='lightweight', backend='onnxruntime', device='cpu')
@@ -97,7 +104,15 @@ def main():
 
             if keypoints is not None and len(keypoints) > 0:
                 kpts = keypoints[0]
-                if len(kpts) >= 13:
+                scs = scores[0] if (scores is not None and len(scores) > 0) else None
+
+                # Verifikasi pose riil (bahu terdeteksi dgn keypoint score > 0.25)
+                valid_pose = True
+                if scs is not None and len(scs) > IDX_RS:
+                    if scs[IDX_LS] < 0.25 and scs[IDX_RS] < 0.25:
+                        valid_pose = False
+
+                if len(kpts) >= 13 and valid_pose:
                     pose_detected = True
 
                     raw_nose_x = float(kpts[IDX_NOSE][0]) / w
@@ -148,7 +163,7 @@ def main():
                 p_ls, p_rs = to_px(ls), to_px(rs)
                 p_lw, p_rw = to_px(lw), to_px(rw)
                 p_lh, p_rh = to_px(lh), to_px(rh)
-                p_le, p_re = to_px((raw_le_x, raw_le_y)), to_px((raw_re_x, raw_re_y))
+                p_le, p_re = to_px(raw_le), to_px(raw_re)
 
                 cv2.line(frame, (0, p_ls[1]), (w, p_rs[1]), (80, 80, 80), 1)
 
@@ -192,7 +207,7 @@ def main():
             cv2.rectangle(overlay, (20, 20), (510, 195), (20, 20, 20), -1)
             cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
 
-            cv2.putText(frame, f"RTMPose (Zero-Delay Head-Cropped)", (35, 50),
+            cv2.putText(frame, f"RTMPose [{device_name}] (Zero-Delay)", (35, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
             cv2.putText(frame, f"FPS: {avg_fps:.1f}  |  Latensi Total: {latency_ms:.1f} ms", (35, 80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)

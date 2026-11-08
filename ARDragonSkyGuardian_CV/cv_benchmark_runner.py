@@ -30,6 +30,7 @@ if os.path.isdir(venv_nvidia):
                 pass
 
 import onnxruntime as ort
+ort.set_default_logger_severity(3)
 ort.preload_dlls()
 from rtmlib import Body
 from ultralytics import YOLO
@@ -174,8 +175,12 @@ def main():
 
     def init_rtm():
         try:
-            return Body(mode='lightweight', backend='onnxruntime', device='cuda')
-        except Exception:
+            b = Body(mode='lightweight', backend='onnxruntime', device='cuda')
+            eps = b.pose_model.session.get_providers()
+            print(f"[*] RTMPose providers: {eps}")
+            return b
+        except Exception as e:
+            print(f"[!] RTMPose fallback ke CPU: {e}")
             return Body(mode='lightweight', backend='onnxruntime', device='cpu')
 
     def infer_rtm(body_obj, frame):
