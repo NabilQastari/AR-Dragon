@@ -28,49 +28,42 @@ namespace DragonWingAR.EditorTools
             light.intensity = 1.2f;
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
-            // 3. Buat Ground Plane / Daratan Referensi (Ukuran 400x400 m di Y = 0)
-            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.name = "Ground_Reference";
-            ground.transform.position = Vector3.zero;
-            ground.transform.localScale = new Vector3(40f, 1f, 40f); // 400m x 400m
-
-            // Material Daratan Hijau / Tanah
-            Renderer groundRend = ground.GetComponent<Renderer>();
-            if (groundRend != null)
+            // 3. Muat Model Pulau 3D Utama (pulau.fbx / pulau.blend)
+            GameObject islandPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/pulau.fbx");
+            if (islandPrefab == null)
             {
-                Material groundMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-                groundMat.name = "Mat_Ground_Grid";
-                groundMat.color = new Color(0.22f, 0.45f, 0.25f); // Hijau alam
-                groundRend.sharedMaterial = groundMat;
+                islandPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/pulau.blend");
             }
 
-            // 4. Buat Pilar / Grid Landmark untuk referensi visual terbang
-            GameObject landmarksParent = new GameObject("Landmarks");
-            Color[] pilarColors = new Color[] { Color.yellow, Color.cyan, Color.magenta, Color.red, Color.blue };
-            Vector3[] pilarPositions = new Vector3[]
+            if (islandPrefab != null)
             {
-                new Vector3(0, 7.5f, 50),
-                new Vector3(60, 7.5f, 100),
-                new Vector3(-60, 7.5f, 100),
-                new Vector3(100, 7.5f, 0),
-                new Vector3(-100, 7.5f, 0)
-            };
+                GameObject islandGo = (GameObject)PrefabUtility.InstantiatePrefab(islandPrefab);
+                islandGo.name = "World_Island";
+                islandGo.transform.position = Vector3.zero;
+                islandGo.transform.rotation = Quaternion.identity;
+                islandGo.transform.localScale = Vector3.one;
 
-            for (int i = 0; i < pilarPositions.Length; i++)
-            {
-                GameObject pilar = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                pilar.name = $"Pilar_Landmark_{i + 1}";
-                pilar.transform.parent = landmarksParent.transform;
-                pilar.transform.position = pilarPositions[i];
-                pilar.transform.localScale = new Vector3(6f, 7.5f, 6f); // Tinggi 15m
-
-                Renderer pRend = pilar.GetComponent<Renderer>();
-                if (pRend != null)
+                // Pasang MeshCollider pada Terrain & Bebatuan Pulau
+                Transform terrainT = islandGo.transform.Find("Island_Terrain");
+                if (terrainT != null && !terrainT.GetComponent<Collider>())
                 {
-                    Material pMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-                    pMat.color = pilarColors[i % pilarColors.Length];
-                    pRend.sharedMaterial = pMat;
+                    terrainT.gameObject.AddComponent<MeshCollider>();
                 }
+                Transform rocksT = islandGo.transform.Find("Island_Rocks");
+                if (rocksT != null && !rocksT.GetComponent<Collider>())
+                {
+                    rocksT.gameObject.AddComponent<MeshCollider>();
+                }
+
+                Debug.Log("<color=#00FF88>[DragonWingAR]</color> Model Pulau 3D (pulau.fbx) berhasil dipasang ke dalam Scene!");
+            }
+            else
+            {
+                // Fallback jika file pulau belum ada
+                GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+                ground.name = "Ground_Reference";
+                ground.transform.position = Vector3.zero;
+                ground.transform.localScale = new Vector3(80f, 1f, 80f);
             }
 
             // 5. Muat Model Naga (Nagcu)
@@ -182,11 +175,30 @@ namespace DragonWingAR.EditorTools
         [MenuItem("DragonWingAR/Inject Naga & HUD ke Scene Aktif Ini")]
         public static void InjectDragonToActiveScene()
         {
+            // Pasang Pulau 3D jika belum ada
+            if (GameObject.Find("World_Island") == null)
+            {
+                GameObject islandPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/pulau.fbx") ??
+                                          AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Assets 3D/pulau.blend");
+                if (islandPrefab != null)
+                {
+                    GameObject islandGo = (GameObject)PrefabUtility.InstantiatePrefab(islandPrefab);
+                    islandGo.name = "World_Island";
+                    islandGo.transform.position = Vector3.zero;
+                    islandGo.transform.rotation = Quaternion.identity;
+
+                    Transform terrainT = islandGo.transform.Find("Island_Terrain");
+                    if (terrainT != null && !terrainT.GetComponent<Collider>()) terrainT.gameObject.AddComponent<MeshCollider>();
+                    Transform rocksT = islandGo.transform.Find("Island_Rocks");
+                    if (rocksT != null && !rocksT.GetComponent<Collider>()) rocksT.gameObject.AddComponent<MeshCollider>();
+                }
+            }
+
             GameObject existing = GameObject.Find("Dragon_Player");
             if (existing != null)
             {
                 Selection.activeGameObject = existing;
-                Debug.Log("<color=#00FF88>[DragonWingAR]</color> Dragon_Player sudah ada di scene aktif ini.");
+                Debug.Log("<color=#00FF88>[DragonWingAR]</color> Dragon_Player & World_Island sudah siap di scene aktif.");
                 return;
             }
 
