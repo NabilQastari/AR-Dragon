@@ -377,7 +377,7 @@ namespace DragonWingAR.UI
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 11
             };
-            GUI.Label(bgRect, "Kontrol Pose: [Y] Tangan Ke Atas (NAIK ↑) | [T] Mendatar (LURUS) | [A] Tangan Ke Bawah (TURUN ↓) | W/S/A/D Keyboard", guideStyle);
+            GUI.Label(bgRect, "Pose Kamera: [Y] Tangan Diangkat (Naik ↑) | [T] Mendatar (Lurus) | [A] Tangan Ke Paha (Turun ↓) || Keyboard: W/Y=Naik | S/A=Turun | Panah=Belok", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)

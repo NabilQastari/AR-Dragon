@@ -211,20 +211,36 @@ namespace DragonWingAR.Controllers
             Vector3 moveDelta = transform.forward * (_currentSpeed * Time.deltaTime);
             transform.position += moveDelta;
 
-            // 2. Kontrol Ketinggian Vertikal Dinamis (Naik / Turun / T-Pose Gliding)
-            if (_currentPitchInput > 0.05f)
-            {
-                // Tangan dikepakkan -> Naik (Climb)
-                currentAltitude += _currentPitchInput * climbSpeed * Time.deltaTime;
-            }
-            else if (_currentPitchInput < -0.05f)
-            {
-                // Dive Pose -> Turun (Dive)
-                currentAltitude += _currentPitchInput * diveSpeed * Time.deltaTime;
-            }
-            // Catatan: Jika T-Pose (_currentPitchInput == 0), currentAltitude dipertahankan stabil di ketinggian saat ini!
+            // 2. Kontrol Ketinggian Vertikal Dinamis (Sistem Alfabet: Y = NAIK, T = LURUS, A = TURUN)
+            bool isClimbing = (_poseProvider != null && _poseProvider.IsYPose) || _currentPitchInput > 0.05f;
+            bool isDiving = (_poseProvider != null && _poseProvider.IsAPose) || _currentPitchInput < -0.05f;
 
-            currentAltitude = Mathf.Clamp(currentAltitude, minAltitude, maxAltitude);
+            if (isClimbing)
+            {
+                float factor = Mathf.Max(0.7f, Mathf.Abs(_currentPitchInput));
+                currentAltitude += factor * climbSpeed * Time.deltaTime;
+            }
+            else if (isDiving)
+            {
+                float factor = Mathf.Max(0.7f, Mathf.Abs(_currentPitchInput));
+                currentAltitude -= factor * diveSpeed * Time.deltaTime;
+            }
+            // Catatan: Jika T-Pose, currentAltitude dipertahankan stabil di ketinggian jelajah saat ini!
+
+            // Raycast proteksi ketinggian daratan: naga tidak akan pernah menembus ke dalam tanah pulau
+            float terrainSurfaceY = 0f;
+            Ray groundRay = new Ray(new Vector3(transform.position.x, 300f, transform.position.z), Vector3.down);
+            int mask = ~LayerMask.GetMask("Ignore Raycast");
+            if (Physics.Raycast(groundRay, out RaycastHit gHit, 500f, mask))
+            {
+                if (gHit.collider.gameObject != gameObject && !gHit.collider.transform.IsChildOf(transform))
+                {
+                    terrainSurfaceY = gHit.point.y;
+                }
+            }
+
+            float safeMin = Mathf.Max(minAltitude, terrainSurfaceY + 2.5f);
+            currentAltitude = Mathf.Clamp(currentAltitude, safeMin, maxAltitude);
 
             Vector3 currentPos = transform.position;
             currentPos.y = Mathf.Lerp(currentPos.y, currentAltitude, Time.deltaTime * altitudeSmoothSpeed);
@@ -274,9 +290,25 @@ namespace DragonWingAR.Controllers
             if (visualModel == null) return;
 
             float targetRoll = _isHovering ? 0f : (-_currentTurnInput * maxRollAngle);
-            // Pitch: Saat menanjak (_currentPitchInput > 0), kepala naga mengarah ke atas (-Euler X)
-            // Saat menukik (_currentPitchInput < 0), kepala naga menunduk ke bumi (+Euler X)
-            float targetPitch = _isHovering ? 0f : (-_currentPitchInput * maxPitchAngle);
+
+            // Pitch: Saat Pose Y (Naik), kepala naga mendongak ke atas (-Euler X)
+            // Saat Pose A (Menukik), kepala naga menunduk tajam (+Euler X)
+            float targetPitch = 0f;
+            if (!_isHovering)
+            {
+                if (_poseProvider != null && _poseProvider.IsYPose)
+                {
+                    targetPitch = -maxPitchAngle;
+                }
+                else if (_poseProvider != null && _poseProvider.IsAPose)
+                {
+                    targetPitch = maxPitchAngle;
+                }
+                else
+                {
+                    targetPitch = -_currentPitchInput * maxPitchAngle;
+                }
+            }
 
             Quaternion targetLocalRot = Quaternion.Euler(targetPitch, 0f, targetRoll);
 

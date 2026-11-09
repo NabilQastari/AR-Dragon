@@ -304,55 +304,48 @@ namespace DragonWingAR.CV
             float avgDeltaY = (dyL + dyR) * 0.5f;
 
             // a. POSE "Y" (Kedua tangan diangkat ke atas diagonal -> NAIK)
-            // Ambang: kedua tangan berada di atas bahu setidaknya 0.04f (atau rata-rata < -0.05f)
-            bool isHandsUp = (dyL < -0.04f) && (dyR < -0.04f);
-            if (isHandsUp || avgDeltaY < -0.05f)
+            // Ambang yang toleran & responsif (mudah dilakukan baik berdiri maupun duduk di depan laptop)
+            bool isYDetected = (dyL < -0.025f && dyR < -0.025f) ||
+                               (avgDeltaY < -0.035f) ||
+                               (dyL < -0.06f && dyR < 0.02f) ||
+                               (dyR < -0.06f && dyL < 0.02f);
+
+            // b. POSE "A" (Kedua tangan diarahkan ke bawah diagonal paha -> TURUN)
+            bool isADetected = (dyL > 0.035f && dyR > 0.035f) ||
+                               (avgDeltaY > 0.045f) ||
+                               (dyL > 0.06f && dyR > -0.02f) ||
+                               (dyR > 0.06f && dyL > -0.02f);
+
+            if (isYDetected)
             {
                 _isYPose = true;
                 _isTPose = false;
                 _isAPose = false;
                 _isFlapping = true;
                 _flapTimer = 0.4f;
+
+                float climbStrength = Mathf.Clamp01((-avgDeltaY) / 0.12f);
+                _pitchInput = Mathf.Max(0.65f, climbStrength);
             }
-            // b. POSE "A" (Kedua tangan diarahkan ke bawah diagonal paha -> TURUN)
-            // Ambang: kedua tangan berada di bawah bahu setidaknya 0.06f (atau rata-rata > 0.07f)
-            else if ((dyL > 0.05f && dyR > 0.05f) || avgDeltaY > 0.07f)
+            else if (isADetected)
             {
                 _isAPose = true;
                 _isYPose = false;
                 _isTPose = false;
                 _isFlapping = false;
+
+                float diveStrength = Mathf.Clamp01(avgDeltaY / 0.12f);
+                _pitchInput = -Mathf.Max(0.65f, diveStrength);
             }
-            // c. POSE "T" (Kedua tangan mendatar horizontal sejajar bahu -> LURUS MENDATAR)
             else
             {
+                // c. POSE "T" (Kedua tangan mendatar sejajar bahu -> LURUS MENDATAR)
                 _isTPose = true;
                 _isYPose = false;
                 _isAPose = false;
                 _isFlapping = false;
+                _pitchInput = 0f;
             }
-
-            // Hitung targetPitch kontinu berdasarkan ketinggian tangan
-            float targetPitch = 0f;
-            if (_isYPose)
-            {
-                // Semakin tinggi tangan diangkat, semakin kencang naga menanjak naik (0.0 s/d +1.0)
-                float climbStrength = Mathf.Clamp01((-avgDeltaY - 0.04f) / 0.18f);
-                targetPitch = Mathf.Max(0.5f, climbStrength);
-            }
-            else if (_isAPose)
-            {
-                // Semakin rendah tangan diturunkan, semakin tajam naga menukik turun (0.0 s/d -1.0)
-                float diveStrength = Mathf.Clamp01((avgDeltaY - 0.06f) / 0.18f);
-                targetPitch = -Mathf.Max(0.5f, diveStrength);
-            }
-            else
-            {
-                targetPitch = 0f; // T-Pose lurus datar
-            }
-
-            // Smoothing transisi pitch input agar naga bermanuver anggun dan responsif
-            _pitchInput = Mathf.MoveTowards(_pitchInput, targetPitch, Time.deltaTime * 8.0f);
 
             // d. Desa 2 (Wildfire): Sembur Air (Buka Mulut > 0.45f ATAU Tangan Rapat di Dada)
             _isHandsTogether = (Vector2.Distance(_smoothedLW, _smoothedRW) < 0.14f) &&
@@ -363,7 +356,7 @@ namespace DragonWingAR.CV
             // e. Desa 3 (Drought): Panggil Hujan Embun (Tangan diangkat tinggi di atas kepala)
             _isHandsHighUp = (_smoothedLW.y < _smoothedLS.y - 0.14f) && (_smoothedRW.y < _smoothedRS.y - 0.14f);
 
-            // 4. Keyboard Fallback (Jika diaktifkan & ditekan oleh pengguna)
+            // 4. Keyboard Fallback (HANYA menimpa jika tombol ditekan secara fisik, atau jika offline)
             if (enableKeyboardFallback)
             {
                 HandleKeyboardFallback();
@@ -372,10 +365,13 @@ namespace DragonWingAR.CV
 
         /// <summary>
         /// Kontrol keyboard fallback:
-        /// - W / Panah Atas: Pose Y (Naik)
-        /// - S / Panah Bawah: Pose A (Turun)
-        /// - Tombol dilepas: Pose T (Lurus Mendatar)
-        /// - A / D / Panah Kiri-Kanan: Belok
+        /// - W / Y / Panah Atas / Spasi : Pose Y (Naik ↑)
+        /// - S / A / Panah Bawah        : Pose A (Turun ↓)
+        /// - T / Tombol Dilepas         : Pose T (Lurus Mendatar)
+        /// - Panah Kiri / Q             : Belok Kiri
+        /// - Panah Kanan / D            : Belok Kanan
+        /// CATATAN: Jika kamera UDP terhubung dan tidak ada tombol yang ditekan,
+        /// metode ini TIDAK AKAN menimpa gestur kamera!
         /// </summary>
         private void HandleKeyboardFallback()
         {
@@ -383,46 +379,63 @@ namespace DragonWingAR.CV
             var kb = Keyboard.current;
             if (kb != null)
             {
-                // Belok Horizontal (A/D atau Panah Kiri/Kanan)
-                float h = 0f;
-                if (kb.leftArrowKey.isPressed || kb.aKey.isPressed) h -= 1f;
-                if (kb.rightArrowKey.isPressed || kb.dKey.isPressed) h += 1f;
-                if (Mathf.Abs(h) > 0.01f)
+                bool keyUp = kb.upArrowKey.isPressed || kb.wKey.isPressed || kb.spaceKey.isPressed || kb.yKey.isPressed;
+                bool keyDown = kb.downArrowKey.isPressed || kb.sKey.isPressed || kb.aKey.isPressed;
+                bool keyLevel = kb.tKey.isPressed;
+                bool keyLeft = kb.leftArrowKey.isPressed || kb.qKey.isPressed;
+                bool keyRight = kb.rightArrowKey.isPressed || kb.dKey.isPressed;
+
+                bool isAnyVerticalKey = keyUp || keyDown || keyLevel;
+                bool isAnyHorizontalKey = keyLeft || keyRight;
+
+                // JIKA UDP TERHUBUNG & PENGGUNA TIDAK MENYENTUH KEYBOARD:
+                // Biarkan penuh data CV kamera bekerja (JANGAN di-reset ke T-Pose!)
+                if (_isConnected && !isAnyVerticalKey && !isAnyHorizontalKey)
                 {
-                    _turnInput = Mathf.Clamp(h, -1f, 1f);
+                    return;
                 }
 
-                // Vertikal Pose Y - T - A:
-                float targetV = 0f;
-                if (kb.upArrowKey.isPressed || kb.wKey.isPressed || kb.spaceKey.isPressed)
+                // 1. Kemudi Belok Horizontal
+                if (isAnyHorizontalKey || !_isConnected)
                 {
-                    // Simulasi Pose Y (Naik)
-                    targetV = 1.0f;
-                    _isYPose = true;
-                    _isTPose = false;
-                    _isAPose = false;
-                    _isFlapping = true;
-                    _flapTimer = 0.4f;
-                }
-                else if (kb.downArrowKey.isPressed || kb.sKey.isPressed)
-                {
-                    // Simulasi Pose A (Turun)
-                    targetV = -1.0f;
-                    _isAPose = true;
-                    _isYPose = false;
-                    _isTPose = false;
-                    _isFlapping = false;
-                }
-                else
-                {
-                    // Simulasi Pose T (Lurus)
-                    targetV = 0f;
-                    _isTPose = true;
-                    _isYPose = false;
-                    _isAPose = false;
+                    float h = 0f;
+                    if (keyLeft) h -= 1f;
+                    if (keyRight) h += 1f;
+
+                    if (isAnyHorizontalKey || !_isConnected)
+                    {
+                        _turnInput = Mathf.Clamp(h, -1f, 1f);
+                    }
                 }
 
-                _pitchInput = Mathf.MoveTowards(_pitchInput, targetV, Time.deltaTime * 8.0f);
+                // 2. Vertikal Pose Y - T - A:
+                if (isAnyVerticalKey || !_isConnected)
+                {
+                    if (keyUp)
+                    {
+                        _isYPose = true;
+                        _isTPose = false;
+                        _isAPose = false;
+                        _pitchInput = 1.0f;
+                        _isFlapping = true;
+                        _flapTimer = 0.4f;
+                    }
+                    else if (keyDown)
+                    {
+                        _isAPose = true;
+                        _isYPose = false;
+                        _isTPose = false;
+                        _pitchInput = -1.0f;
+                        _isFlapping = false;
+                    }
+                    else if (keyLevel || !_isConnected)
+                    {
+                        _isTPose = true;
+                        _isYPose = false;
+                        _isAPose = false;
+                        _pitchInput = 0f;
+                    }
+                }
 
                 // Tombol 1: Simulasi Kepakan Sayap (Desa 1)
                 if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed)
@@ -444,41 +457,57 @@ namespace DragonWingAR.CV
                     _isHandsHighUp = true;
                 }
 
-                return; // Selesai diproses oleh Input System baru, jangan jalankan legacy input
+                return;
             }
 #else
-            // Fallback Legacy Input Manager HANYA jika paket Input System tidak terpasang
+            // Fallback Legacy Input Manager
             try
             {
-                float horizontalAxis = Input.GetAxisRaw("Horizontal");
-                if (Mathf.Abs(horizontalAxis) > 0.01f)
+                bool keyUp = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.Y) || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.Space);
+                bool keyDown = Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.DownArrow);
+                bool keyLevel = Input.GetKey(KeyCode.T);
+                bool keyLeft = Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.Q);
+                bool keyRight = Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D);
+
+                bool isAnyV = keyUp || keyDown || keyLevel;
+                bool isAnyH = keyLeft || keyRight;
+
+                if (_isConnected && !isAnyV && !isAnyH)
                 {
-                    _turnInput = Mathf.Clamp(horizontalAxis, -1f, 1f);
+                    return;
                 }
 
-                float verticalAxis = Input.GetAxisRaw("Vertical");
-                if (Input.GetKey(KeyCode.Space)) verticalAxis = 1f;
+                if (isAnyH || !_isConnected)
+                {
+                    float h = 0f;
+                    if (keyLeft) h -= 1f;
+                    if (keyRight) h += 1f;
+                    _turnInput = Mathf.Clamp(h, -1f, 1f);
+                }
 
-                if (verticalAxis > 0.1f)
+                if (isAnyV || !_isConnected)
                 {
-                    _pitchInput = 1f;
-                    _isYPose = true;
-                    _isTPose = false;
-                    _isAPose = false;
-                }
-                else if (verticalAxis < -0.1f)
-                {
-                    _pitchInput = -1f;
-                    _isAPose = true;
-                    _isYPose = false;
-                    _isTPose = false;
-                }
-                else
-                {
-                    _pitchInput = 0f;
-                    _isTPose = true;
-                    _isYPose = false;
-                    _isAPose = false;
+                    if (keyUp)
+                    {
+                        _pitchInput = 1f;
+                        _isYPose = true;
+                        _isTPose = false;
+                        _isAPose = false;
+                    }
+                    else if (keyDown)
+                    {
+                        _pitchInput = -1f;
+                        _isAPose = true;
+                        _isYPose = false;
+                        _isTPose = false;
+                    }
+                    else if (keyLevel || !_isConnected)
+                    {
+                        _pitchInput = 0f;
+                        _isTPose = true;
+                        _isYPose = false;
+                        _isAPose = false;
+                    }
                 }
             }
             catch (Exception)

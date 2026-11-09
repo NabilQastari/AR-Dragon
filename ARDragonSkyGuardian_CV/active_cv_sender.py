@@ -177,10 +177,15 @@ def main():
                 dy_r = rw[1] - rs[1]
                 avg_dy = (dy_l + dy_r) * 0.5
 
-                if (dy_l < -0.04 and dy_r < -0.04) or avg_dy < -0.05:
+                is_y = ((dy_l < -0.025 and dy_r < -0.025) or (avg_dy < -0.035) or
+                        (dy_l < -0.06 and dy_r < 0.02) or (dy_r < -0.06 and dy_l < 0.02))
+                is_a = ((dy_l > 0.035 and dy_r > 0.035) or (avg_dy > 0.045) or
+                        (dy_l > 0.06 and dy_r > -0.02) or (dy_r > 0.06 and dy_l > -0.02))
+
+                if is_y:
                     vert_mode_str = "POSE Y (NAIK ↑)"
                     vert_mode_color = (0, 255, 100)
-                elif (dy_l > 0.05 and dy_r > 0.05) or avg_dy > 0.07:
+                elif is_a:
                     vert_mode_str = "POSE A (TURUN ↓)"
                     vert_mode_color = (0, 140, 255)
                 else:
