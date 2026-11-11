@@ -1,8 +1,8 @@
-# 🐉 PROJECT CONTEXT & TECHNICAL BIBLE: AR DRAGON SKY GUARDIAN (v5.0 — ELYTRA 3D DYNAMICS & TUCK DIVE)
+# 🐉 PROJECT CONTEXT & TECHNICAL BIBLE: AR DRAGON SKY GUARDIAN (v5.1 — SKY PECK MOTION FLIGHT DYNAMICS)
 
 > **Fungsi Dokumen:** Rujukan teknikal utama (*Single Source of Truth*) bagi kolaborasi antara Manusia (Developer) dan AI Agent (Hermes / Antigravity Agent).
 > **Pasangan Dokumen:** Gunakan bersama `prd.md` untuk implementasi alur kerja berperingkat.
-> **Status Implementasi:** Dinamika penerbangan Minecraft Elytra 3D Sejati (Orientasi 3D bebas, Pertukaran Energi Kinetik-Gravitasi, Kepakan Sayap Fly Up + Speed Up, Pose Foto Pengguna Tuck Dive -45°, Pose T Glide -5°, dan Pose Y Climb) telah **100% aktif dan terverifikasi di Unity Play Mode**.
+> **Status Implementasi:** Mekanik simulasi penerbangan alami ala **Sky Peck** (Flap to Climb halus tanpa pitch nodding, Lean to Turn & Bank, Tuck to Dive kecepatan tinggi $28\text{ m/s}$, Swoop Climb otomatis paska-dive, dan Glide anggun) telah **100% aktif, terkompilasi bersih (0 Compiler Errors), dan terverifikasi di Unity Play Mode**.
 
 ---
 
@@ -64,48 +64,49 @@
 
 ---
 
-## 3. DINAMIKA PENERBANGAN 3D ELYTRA (MINECRAFT FLIGHT PHYSICS)
+## 3. MEKANIK PENERBANGAN ALA SKY PECK (SKY PECK MOTION FLIGHT DYNAMICS)
 
-Sistem penerbangan dirancang bebas dari kunci orientasi (*non-locked 3D freedom*), mengikuti model dinamika **Minecraft Elytra**:
+Sistem penerbangan dirancang meniru game terbang tubuh indie legendaris **Sky Peck** (Ivan, *skypeck.fun*), menggabungkan rasa kebebasan meluncur anggun dengan respon kinestetik yang alami tanpa menyebabkan disorientasi kamera atau *pitch nodding*:
 
 ```
         \   /                 — o —                    | o |
          \o/                    |                     /  |  \
-        POSE Y                POSE T                 TUCK DIVE
-    (CLIMB SOARING)       (ELYTRA GLIDE)         (TERJUN CEPAT ↓↓)
-   Pitch: +25° ~ +35°     Pitch: ~ -5° (Glide)      Pitch: -45° (Dive)
-   Konversi Kecepatan    Kecepatan Jelajah 14 m/s   Akselerasi Gravitasi
-     -> Ketinggian         Glide Slope Halus         Hingga 28 m/s!
+   FLAP TO CLIMB             GLIDE                   TUCK TO DIVE
+   (Mendaki Halus)       (Meluncur Anggun)       (Menukik Cepat ↓↓)
+   Lift Vertikal + Dorong  Jelajah 14 m/s          Pitch: -45° (Dive)
+   Pitch Stabil & Tenang  Sink Rate: -1.0 m/s      Akselerasi Kencang
+   Tanpa Nodding!         Otomatis SWOOP CLIMB!    Hingga 28 m/s!
 ```
 
-### 3.1 Vektor Gerak 3D & Prinsip Non-Locking
-- **Arah Gerak Sejati:**
-  $$\vec{v} = \text{transform.forward} \times v_{\text{airspeed}}$$
-  Naga terbang persis ke arah hadap moncong badannya. Ketika hidung mendongak ke atas, dorongan maju langsung membawanya terbang menanjak ke langit 3D.
-- **Rotasi 3D Dinamis:**
-  $$\text{rotation} = \text{Quaternion.Euler}(-\theta_{\text{pitch}}, \psi_{\text{yaw}}, \phi_{\text{roll}})$$
+### 3.1 Lima Pilar Inti Mekanik Sky Peck
+1. **Flap to Climb (Mengepak untuk Mendaki):**
+   - Pemain mengepakkan tangan ke atas dan ke bawah secara ritmis.
+   - Setiap kepakan langsung menghasilkan **daya angkat vertikal halus** ($v_{\text{vertical}} \to +6.5\text{ m/s}$) dan dorongan maju ($+12\text{ m/s}^2$).
+   - **Bebas Pitch Nodding (Decoupled):** Ayunan tangan sama sekali tidak memicu Pose Y (mendongak) saat upstroke ataupun Pose A (menunduk) saat downstroke. Kepala naga tetap mendongak tenang $+8^\circ \sim +12^\circ$, menghasilkan pendakian vertikal yang stabil dan nyaman di mata.
+2. **Lean to Bank & Turn (Kemudi Alami Torso + Kemiringan Sayap):**
+   - Pemain dapat berbelok dengan mencondongkan badan atas (*torso lean* $\frac{\text{mid\_shoulder.x} - \text{mid\_hip.x}}{\text{shoulder\_dist}}$) ataupun dengan memiringkan tangan (*arm tilt*).
+   - Penggabungan $50\%$ kemiringan tangan $+ 50\%$ condong tubuh memungkinkan pemain bermanuver seperti burung layang-layang asli.
+   - Kemudi menghasilkan yaw turn $65^\circ/\text{s}$ dan roll banking visual sayap hingga $\pm 35^\circ$.
+3. **Tuck to Dive (Menukik Curam Kecepatan Tinggi):**
+   - Tangan dirapatkan mengepal di dada atas dengan siku mengarah ke bawah di samping badan (persis seperti foto pose pengguna).
+   - Sayap melipat aerodinamis rapat, hidung menukik tajam $-45^\circ$, dan naga meluncur kencang hingga batas $28\text{ m/s}$.
+4. **Swoop Climb Out of Dive (Luncuran Melambung Menanjak Otomatis):**
+   - Setelah menukik kencang, pemain cukup membuka kembali tangannya ke posisi Glide.
+   - Kelebihan kecepatan ($v_{\text{airspeed}} > 14\text{ m/s}$) secara otomatis dikonversi oleh sistem aerodinamika naga menjadi luncuran melambung naik (*swoop soaring*) yang megah, menaikkan ketinggian naga secara anggun sebelum kembali rata pada kecepatan jelajah.
+5. **Glide (Meluncur Santai & Anggun):**
+   - Kedua tangan direntangkan mendatar ke samping.
+   - Naga meluncur stabil pada kecepatan jelajah $14\text{ m/s}$ dengan laju turun (*sink rate*) alami yang sangat lembut ($-1.0\text{ m/s}$).
 
-### 3.2 Pertukaran Energi Kinetik & Gravitasi (Gravity Energy Exchange)
-1. **Saat Menukik ($\theta < 0$):**
-   - Komponen gravitasi searah lintasan mempercepat laju naga:
-     $$\Delta v = -g_{\text{accel}} \cdot \sin(\theta) \cdot \Delta t \quad (g_{\text{accel}} = 18\text{ m/s}^2)$$
-   - Kecepatan melonjak cepat dari kecepatan jelajah ($14\text{ m/s}$) hingga batas terminal dive ($28\text{ m/s}$).
-2. **Saat Menanjak ($\theta > 0$):**
-   - Gravitasi memperlambat laju maju, mengonversi energi kinetik hasil dive menjadi kenaikan ketinggian tajam (*zoom climb soaring*).
-   - Batas stall minimum dijaga pada $7.0\text{ m/s}$ agar naga tidak kehilangan kontrol.
-3. **Aerodynamic Drag:**
-   - Saat meluncur jelajah (T-Pose): Drag normal menstabilkan kecepatan di $14\text{ m/s}$.
-   - Saat Tuck Dive: Sayap terlipat aerodinamis rapat, koefisien drag berkurang drastis ($0.12$), memungkinkan terjun bebas berkecepatan tinggi.
-
-### 3.3 Gestur Kontrol Utama
+### 3.2 Matriks Gestur Sky Peck
 
 | Gestur Tubuh | Sikap Fisik Pemain | Respon & Fisika Naga |
 | :--- | :--- | :--- |
-| **Mengepakkan Tangan (Wing Flapping)** | Gerakan kedua tangan naik-turun cepat melintasi bahu | **Fly Up + Speed Up:** Akselerasi dorongan maju kinetik ($+14\text{ m/s}^2$) + gaya angkat vertikal langsung ($+3.5\text{ m/s}$). Memberikan sensasi roket pendorong naga! |
-| **Pose T (Elytra Glide)** | Kedua tangan direntangkan mendatar sejajar bahu | **Meluncur Maju dengan Sedikit Dive:** Pitch otomatis diatur $\approx -5^\circ$, meluncur mulus dengan kecepatan jelajah stabil $14\text{ m/s}$. |
-| **Tuck Dive (Pose di Foto Pengguna)** | Tangan mengepal rapat di dada atas / leher, siku mengarah ke bawah di samping badan | **Dive Terjun Cepat:** Pitch menukik curam $-45^\circ$, hambatan udara berkurang, naga terjun bebas berakselerasi kencang hingga $24-28\text{ m/s}$. |
-| **Pose Y / Angkat Badan** | Kedua tangan diangkat ke atas diagonal | **Arah Badan ke Atas (Climb):** Pitch mendongak $+25^\circ \sim +35^\circ$, mengonversi kecepatan dive menjadi pendakian tinggi ke awan. |
-| **Kemudi Kemiringan (Tilt)** | Miringkan satu tangan lebih tinggi dari tangan lain | **Yaw Turn & Banking Roll:** Putaran kemudi horizontal ($65^\circ/\text{s}$) dan kemiringan visual sayap ($\pm 35^\circ$). |
+| **Mengepakkan Tangan (Flap to Climb)** | Gerakan kedua tangan naik-turun melintasi bahu | **Mendaki Vertikal Halus:** Gaya angkat vertikal $+6.5\text{ m/s}$ & dorongan maju $+12\text{ m/s}^2$. Pitch tenang tanpa ayunan bolak-balik. |
+| **Rentangkan Tangan (Glide)** | Kedua tangan direntangkan mendatar sejajar bahu | **Meluncur Anggun:** Jelajah stabil $14\text{ m/s}$, sink rate alami $-1.0\text{ m/s}$. Mengaktifkan *Swoop Climb* jika baru keluar dari dive. |
+| **Tuck Dive (Pose di Foto Pengguna)** | Tangan mengepal di dada atas / leher, siku ke bawah di samping badan | **Dive Terjun Cepat:** Pitch menukik curam $-45^\circ$, naga terjun bebas berakselerasi kencang hingga $24-28\text{ m/s}$. |
+| **Condongkan Badan / Tilt Lengan (Lean to Turn)** | Condongkan torso ke kiri/kanan atau miringkan lengan | **Kemudi Belok & Banking:** Kemudi Yaw responsif ($65^\circ/\text{s}$) disertai kemiringan banking sayap visual ($\pm 35^\circ$). |
+| **Buka Mulut Lebar / Rapatkan Tangan** | Buka rahang mulut atau tangkupkan kedua tangan di dada | **Semburan Air Purba:** Memancarkan semburan air untuk memadamkan api desa 2. |
+| **Angkat Kedua Tangan Tinggi** | Kedua tangan diangkat lurus tinggi ke atas kepala | **Hujan Embun Restorasi:** Memanggil hujan embun pemulih tanah tandus desa 3. |
 
 ### 3.4 Proteksi Ketinggian Daratan (Terrain Clearance Protection)
 - Naga dilengkapi sensor raycast otomatis ke bawah sejauh 500 meter.

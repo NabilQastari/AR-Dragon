@@ -169,15 +169,16 @@ def main():
                         flap_count, flap_state_str, flap_freq, flap_power = flap_detector.update(lw, rw, ls, rs)
                         raw_diff, norm_tilt = compute_smooth_tilt(lw, rw, deadzone=0.035, max_tilt=0.25)
 
-            # 2. Deteksi Manuver Dinamis (Minecraft Elytra Flight Dynamics)
-            # - TUCK DIVE (Sesuai Foto Pengguna): Tangan mengepal di dada atas/leher, siku ke bawah -> Dive Terjun Cepat
-            # - KEPAKAN SAYAP (Flapping): Menggerakkan tangan naik-turun -> Fly Up + Speed Up
-            # - POSE Y: Tangan diangkat ke atas -> Mendongak ke atas (Zoom Climb)
-            # - POSE T (Elytra Glide): Tangan merentang mendatar -> Meluncur ke depan dengan sedikit dive (-5 deg)
+            # 2. Deteksi Manuver Dinamis ala Sky Peck:
+            # - TUCK TO DIVE (Sesuai Foto Pengguna): Tangan mengepal di dada atas/leher, siku ke bawah -> Dive Terjun Cepat
+            # - FLAP TO CLIMB (Kepakan Sayap): Menggerakkan tangan naik-turun -> Daya angkat vertikal halus & dorongan maju
+            # - LEAN TO TURN: Condongkan tubuh (torso) atau miringkan lengan untuk berbelok dan banking sayap
+            # - GLIDE: Tangan merentang mendatar -> Meluncur anggun dengan kecepatan jelajah stabil
             is_tuck_dive = False
             is_flapping = False
             is_y = False
-            vert_mode_str = "POSE T (ELYTRA GLIDE)"
+            total_lean = 0.0
+            vert_mode_str = "SKY PECK: GLIDE (Meluncur Anggun)"
             vert_mode_color = (255, 220, 60)
 
             if pose_detected:
@@ -185,6 +186,15 @@ def main():
                 dy_r = rw[1] - rs[1]
                 avg_dy = (dy_l + dy_r) * 0.5
                 wrist_dist = math.hypot(lw[0] - rw[0], lw[1] - rw[1])
+
+                # Hitung Lean to Turn ala Sky Peck (50% Arm Tilt + 50% Torso Lean)
+                mid_s = ((ls[0] + rs[0]) * 0.5, (ls[1] + rs[1]) * 0.5)
+                mid_h = ((lh[0] + rh[0]) * 0.5, (lh[1] + rh[1]) * 0.5)
+                sw = max(0.08, shoulder_dist)
+                torso_lean = (mid_s[0] - mid_h[0]) / sw
+                total_lean = float(np.clip(0.50 * norm_tilt + 0.50 * (torso_lean * 2.2), -1.0, 1.0))
+                if abs(total_lean) < 0.05:
+                    total_lean = 0.0
 
                 # a. TUCK DIVE (Foto Pengguna): Siku di bawah pergelangan tangan & bahu, tangan rapat di dada
                 elbows_below_wrists = (le[1] > lw[1] + 0.04) and (re[1] > rw[1] + 0.04)
@@ -195,7 +205,7 @@ def main():
                 if elbows_below_wrists and elbows_below_shoulders and wrists_at_chest and hands_compact:
                     is_tuck_dive = True
 
-                # b. FLAPPING: Siklus kepakan aktif (Fly Up + Speed Up)
+                # b. FLAPPING: Siklus kepakan aktif (Fly Up + Speed Up ala Sky Peck)
                 now_t = time.perf_counter()
                 has_recent_flap = (now_t - flap_detector.last_flap_time) < 0.60 and (flap_detector.last_flap_time > 0)
                 is_active_flapping = (flap_power > 0.20 and not is_tuck_dive)
@@ -203,11 +213,7 @@ def main():
                     is_flapping = True
 
                 # c. ORIENTASI BADAN (Body Pitch: -1.0 s/d +1.0)
-                # Dihitung dari rasio ketinggian hidung terhadap bahu dan kemiringan torso
-                mid_s_x = (ls[0] + rs[0]) * 0.5
-                mid_s_y = (ls[1] + rs[1]) * 0.5
-                head_dist = mid_s_y - raw_nose_y
-                sw = max(0.10, shoulder_dist)
+                head_dist = mid_s[1] - raw_nose_y
                 head_ratio = head_dist / sw
 
                 # Signal orientasi kepala/badan (netral ~ 0.48)
@@ -225,7 +231,7 @@ def main():
 
                     # Periksa apakah busur ayunan kepakan diarahkan ke atas kepala (high arc) atau ke bawah (low arc)
                     avg_wrist_y = (lw[1] + rw[1]) * 0.5
-                    arm_aim_offset = mid_s_y - avg_wrist_y  # Positif jika tangan mengepak di atas bahu
+                    arm_aim_offset = mid_s[1] - avg_wrist_y  # Positif jika tangan mengepak di atas bahu
                     if arm_aim_offset > 0.08:
                         flap_aim = min(1.0, (arm_aim_offset - 0.08) / 0.12)
                     elif arm_aim_offset < -0.12:
@@ -233,36 +239,27 @@ def main():
                     else:
                         flap_aim = 0.0
 
-                    # Badan diarahkan ke atas jika kepala mendongak atau kepakan sayap di atas kepala
                     body_pitch = 0.55 * head_signal + 0.45 * flap_aim
                 else:
                     body_pitch = head_signal
-                    # Barulah jika TIDAK mengepak, pose Y sustained atau pose A sustained aktif
                     is_y = ((dy_l < -0.04 and dy_r < -0.04) or (avg_dy < -0.05)) and not is_tuck_dive
                     is_a = ((dy_l > 0.05 and dy_r > 0.05) or (avg_dy > 0.06)) and not is_tuck_dive
 
                 # Tentukan label dan warna status untuk HUD
                 if is_tuck_dive:
-                    vert_mode_str = "DIVE TERJUN (TUCK DIVE ↓↓)"
+                    vert_mode_str = "SKY PECK: TUCK DIVE (Menukik Cepat ↓↓)"
                     vert_mode_color = (0, 100, 255)
                 elif is_flapping:
-                    if body_pitch > 0.20:
-                        vert_mode_str = f"KEPAK: NAIK KE ATAS ↑ (+{body_pitch*100:.0f}%)"
-                        vert_mode_color = (0, 255, 200)
-                    elif body_pitch < -0.20:
-                        vert_mode_str = f"KEPAK: MENUKIK TURUN ↓ ({body_pitch*100:.0f}%)"
-                        vert_mode_color = (0, 180, 255)
-                    else:
-                        vert_mode_str = "KEPAK: MAJU CEPAT [SPEED UP]"
-                        vert_mode_color = (0, 255, 120)
+                    vert_mode_str = f"SKY PECK: FLAP TO CLIMB ↑ (+{flap_power*100:.0f}%)"
+                    vert_mode_color = (0, 255, 120)
                 elif is_y:
-                    vert_mode_str = "POSE Y: CLIMB SOARING ↑"
+                    vert_mode_str = "SKY PECK: ZOOM CLIMB ↑"
                     vert_mode_color = (0, 255, 220)
                 elif is_a:
-                    vert_mode_str = "POSE A: TURUN MELUNCUR ↓"
+                    vert_mode_str = "SKY PECK: DIVE ↓"
                     vert_mode_color = (0, 160, 255)
                 else:
-                    vert_mode_str = "POSE T: ELYTRA GLIDE (~ -5°)"
+                    vert_mode_str = "SKY PECK: GLIDE (Meluncur Anggun)"
                     vert_mode_color = (255, 220, 60)
 
             # 3. Inferensi Mulut Terbuka via Crop Area Kepala
@@ -341,7 +338,7 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 120), 2)
                 cv2.putText(frame, f"Manuver: {vert_mode_str}", (35, 105),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.50, vert_mode_color, 2)
-                cv2.putText(frame, f"Sayap: {flap_state_str} (Freq: {flap_freq:.1f} Hz) | Tilt: {norm_tilt:+.2f}", (35, 135),
+                cv2.putText(frame, f"Sayap: {flap_state_str} (Freq: {flap_freq:.1f} Hz) | Lean: {total_lean:+.2f}", (35, 135),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
                 cv2.putText(frame, f"Mulut: {'SEMBUR AIR' if is_water_breathing else 'TUTUP'} ({mouth_score:.2f})", (35, 160),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 220, 0) if is_water_breathing else (180, 180, 180), 1)

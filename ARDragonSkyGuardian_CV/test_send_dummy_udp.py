@@ -1,11 +1,11 @@
 """
 test_send_dummy_udp.py
 Skrip pengujian transmisi data sintetis (dummy) ke Unity via UDP port 5052 (Pose) & 5053 (Video PIP).
-Mensimulasikan 4 mode Minecraft Elytra:
-1. POSE T: Meluncur maju dengan sedikit dive (-5 deg)
-2. FLAPPING: Mengepakkan tangan (Fly Up + Speed Up)
-3. TUCK DIVE: Pose foto pengguna (tangan di dada, siku ke bawah -> Dive terjun kecepatan tinggi)
-4. POSE Y / CLIMB: Badan mengarah ke atas (Zoom climb)
+Mensimulasikan 4 mode mekanik Sky Peck:
+1. GLIDE (0-4s): Tangan merentang mendatar, jelajah stabil dengan sink rate alami
+2. FLAP TO CLIMB (4-8s): Mengepakkan tangan naik-turun -> Daya angkat vertikal halus mendaki ke atas
+3. TUCK TO DIVE (8-12s): Pose foto pengguna (tangan di dada, siku ke bawah) -> Menukik curam kecepatan tinggi
+4. SWOOP CLIMB & LEAN (12-16s): Membuka sayap setelah dive -> Mengonversi laju kencang menjadi luncuran melambung naik (Swoop) + Lean to Bank Turn
 """
 
 import time
@@ -16,10 +16,10 @@ from udp_sender import PoseUDPSender, VideoUDPSender
 
 def main():
     print("=" * 65)
-    print("🚀 PENGIRIM PAKET UDP SINTETIS (MINECRAFT ELYTRA DYNAMICS)")
+    print("🚀 PENGIRIM PAKET UDP SINTETIS (SKY PECK FLIGHT MECHANICS)")
     print("   - Target Pose UDP : 127.0.0.1:5052 (CSV 21 Float)")
     print("   - Target Video PIP: 127.0.0.1:5053 (JPEG Frame)")
-    print("   - Siklus: T-Pose -> Flapping -> Tuck Dive -> Pose Y Climb")
+    print("   - Siklus: Glide -> Flap to Climb -> Tuck Dive -> Swoop Climb & Lean")
     print("   - Tekan Ctrl+C untuk berhenti")
     print("=" * 65)
 
@@ -34,11 +34,11 @@ def main():
             t += 0.05
             cycle = t % 16.0  # 4 fase per 4 detik
 
-            # Bahu & Pinggul statis
-            ls = (0.40, 0.38)
-            rs = (0.60, 0.38)
-            lh = (0.44, 0.72)
-            rh = (0.56, 0.72)
+            # Bahu & Pinggul dasar
+            ls = [0.40, 0.38]
+            rs = [0.60, 0.38]
+            lh = [0.44, 0.72]
+            rh = [0.56, 0.72]
 
             tilt_wave = math.cos(t * 1.5) * 0.08  # Kemiringan belok kiri-kanan
             is_dive = 0.0
@@ -47,53 +47,60 @@ def main():
             flap_power = 0.0
 
             if cycle < 4.0:
-                # 1. POSE T (Elytra Glide, tangan merentang mendatar)
-                mode_name = "POSE T (ELYTRA GLIDE ~ -5°)"
+                # 1. GLIDE (Sayap terbentang mendatar, meluncur stabil)
+                mode_name = "SKY PECK: GLIDE (Meluncur Jelajah)"
                 mode_color = (255, 220, 60)
-                le = (0.28, 0.40 + tilt_wave * 0.5)
-                re = (0.72, 0.40 - tilt_wave * 0.5)
-                lw = (0.16, 0.41 + tilt_wave)
-                rw = (0.84, 0.41 - tilt_wave)
+                le = (0.28, 0.40)
+                re = (0.72, 0.40)
+                lw = (0.16, 0.41)
+                rw = (0.84, 0.41)
 
             elif cycle < 8.0:
-                # 2. FLAPPING (Mengepakkan tangan: Fly Up + Speed Up)
-                mode_name = "KEPAK SAYAP (FLY UP + SPEED UP)"
+                # 2. FLAP TO CLIMB (Mengepakkan tangan: daya angkat vertikal naik tanpa pitch nodding)
+                mode_name = "SKY PECK: FLAP TO CLIMB ↑ (Mendaki Vertikal)"
                 mode_color = (0, 255, 120)
-                flap_osc = math.sin(t * 12.0) * 0.22  # Frekuensi cepat ~2 Hz
+                flap_osc = math.sin(t * 12.0) * 0.20  # Frekuensi kepakan ~2 Hz
                 le = (0.30, 0.42 + flap_osc * 0.5)
                 re = (0.70, 0.42 + flap_osc * 0.5)
                 lw = (0.20, 0.40 + flap_osc)
                 rw = (0.80, 0.40 + flap_osc)
                 is_flap = 1.0
                 flap_freq = 2.0
-                flap_power = 0.85
+                flap_power = 0.88
 
             elif cycle < 12.0:
-                # 3. TUCK DIVE (Foto Pengguna: tangan mengepal di dada, siku ke bawah)
-                mode_name = "TUCK DIVE (DIVE TERJUN CEPAT ↓↓)"
+                # 3. TUCK TO DIVE (Foto Pengguna: tangan mengepal rapat di dada, siku ke bawah)
+                mode_name = "SKY PECK: TUCK DIVE ↓↓ (Menukik Cepat)"
                 mode_color = (0, 100, 255)
-                # Siku di bawah bahu dan pergelangan tangan
-                le = (0.32, 0.55)
-                re = (0.68, 0.55)
+                # Siku mengarah ke bawah di bawah bahu dan pergelangan tangan
+                le = (0.34, 0.56)
+                re = (0.66, 0.56)
                 # Tangan mengepal di dada atas
-                lw = (0.42, 0.42)
-                rw = (0.58, 0.42)
+                lw = (0.43, 0.43)
+                rw = (0.57, 0.43)
                 is_dive = 1.0
 
             else:
-                # 4. POSE Y / CLIMB (Tangan diangkat ke atas -> Mengarahkan hidung ke atas)
-                mode_name = "ARAH ATAS (CLIMB SOARING ↑)"
+                # 4. SWOOP CLIMB OUT OF DIVE & LEAN TO TURN
+                # Membuka sayap lebar setelah dive -> naga melambung naik (Swoop Climb) sambil condong berbelok
+                lean_offset = 0.06 * math.sin(t * 2.0)
+                # Condongkan torso
+                ls[0] += lean_offset
+                rs[0] += lean_offset
+                mode_name = "SKY PECK: SWOOP CLIMB ↑ + LEAN TURN"
                 mode_color = (0, 255, 220)
-                le = (0.30, 0.28 + tilt_wave * 0.5)
-                re = (0.70, 0.28 - tilt_wave * 0.5)
-                lw = (0.22, 0.16 + tilt_wave)
-                rw = (0.78, 0.16 - tilt_wave)
+                le = (0.28 + lean_offset, 0.38 + tilt_wave * 0.5)
+                re = (0.72 + lean_offset, 0.38 - tilt_wave * 0.5)
+                lw = (0.16 + lean_offset, 0.39 + tilt_wave)
+                rw = (0.84 + lean_offset, 0.39 - tilt_wave)
 
-            mouth = 1.0 if (math.sin(t * 0.8) > 0.7) else 0.0
+            mouth = 1.0 if (math.sin(t * 0.8) > 0.75) else 0.0
 
             # 1. Kirim pose CSV ke Unity (21-24 float)
             sender.send_pose(
-                ls, rs, lw, rw, lh, rh,
+                (ls[0], ls[1]), (rs[0], rs[1]),
+                lw, rw,
+                (lh[0], lh[1]), (rh[0], rh[1]),
                 mouth_open=mouth,
                 le=le, re=re,
                 is_dive=is_dive,
@@ -101,7 +108,7 @@ def main():
                 flap_freq=flap_freq,
                 flap_power=flap_power,
                 body_pitch=(1.0 if cycle >= 12.0 else (-1.0 if (8.0 <= cycle < 12.0) else 0.0)),
-                nose=(0.50, 0.24)
+                nose=(0.50 + (ls[0] - 0.40), 0.24)
             )
 
             # 2. Gambar frame sintetis untuk video PIP port 5053

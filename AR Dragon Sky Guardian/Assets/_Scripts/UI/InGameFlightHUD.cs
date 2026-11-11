@@ -342,58 +342,45 @@ namespace DragonWingAR.UI
             GUI.Label(new Rect(32, 26, 300, 22), "AR DRAGON SKY GUARDIAN", titleStyle);
 
             GUI.color = isHovering ? Color.yellow : Color.white;
-            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "MINECRAFT ELYTRA 3D FLIGHT";
+            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "SKY PECK MOTION FLIGHT";
             GUI.Label(new Rect(32, 48, 300, 20), $"Status Mode : {flightMode}");
 
             // Kecepatan & Ketinggian
-            string speedTag = (speed > 20f) ? " [HIGH SPEED DIVE]" : ((speed > 16f) ? " [THRUST BOOST]" : "");
+            string speedTag = (speed > 20f) ? " [HIGH SPEED DIVE]" : ((flightController != null && flightController.IsSwoopClimbing) ? " [SWOOP SOARING]" : "");
             GUI.color = (speed > 20f) ? new Color(1f, 0.4f, 0f) : Color.white;
             GUI.Label(new Rect(32, 68, 300, 20), $"Kecepatan  : {speed:F1} m/s{speedTag} | Alt: {altitude:F1} m");
 
-            // Status Manuver Dinamis (Elytra Physics)
+            // Status Manuver Dinamis (Sky Peck Flight States)
             string vertStatus;
             Color vertCol;
             if (poseReceiver != null && poseReceiver.IsTuckDive)
             {
-                vertStatus = $"TUCK DIVE: TERJUN CEPAT (Pitch: {pitch:F0}°)";
+                vertStatus = $"TUCK DIVE: TERJUN CEPAT ↓↓ (Speed: {speed:F1} m/s)";
                 vertCol = new Color(1f, 0.35f, 0.05f);
+            }
+            else if (flightController != null && flightController.IsSwoopClimbing)
+            {
+                vertStatus = $"SWOOP CLIMB: MELAMBUNG NAIK ↑ (+{flightController.CurrentVerticalVelocity:F1} m/s)";
+                vertCol = new Color(0f, 1f, 0.85f);
             }
             else if (poseReceiver != null && poseReceiver.IsFlapping)
             {
-                float bp = poseReceiver.BodyPitch;
-                if (bp > 0.18f)
-                {
-                    vertStatus = $"KEPAK: NAIK MENANJAK ↑ (Pitch: {pitch:F0}°)";
-                    vertCol = new Color(0f, 1f, 0.85f);
-                }
-                else if (bp < -0.18f)
-                {
-                    vertStatus = $"KEPAK: MENUKIK TURUN ↓ (Pitch: {pitch:F0}°)";
-                    vertCol = new Color(1f, 0.6f, 0.1f);
-                }
-                else
-                {
-                    vertStatus = $"KEPAK: MAJU CEPAT [SPEED UP] (Pitch: {pitch:F0}°)";
-                    vertCol = new Color(0.1f, 1f, 0.4f);
-                }
-            }
-            else if (poseReceiver != null && poseReceiver.IsYPose)
-            {
-                vertStatus = $"ARAH ATAS: CLIMB SOARING ↑ (Pitch: {pitch:F0}°)";
-                vertCol = new Color(0f, 1f, 0.9f);
+                float climbRate = (flightController != null) ? flightController.CurrentVerticalVelocity : 5.0f;
+                vertStatus = $"FLAP TO CLIMB: NAIK KE ATAS ↑ (+{climbRate:F1} m/s)";
+                vertCol = new Color(0.1f, 1f, 0.4f);
             }
             else
             {
-                vertStatus = $"POSE T: ELYTRA GLIDE (Pitch: {pitch:F0}°)";
+                vertStatus = "GLIDE: MELUNCUR ANGGUN (~ -1.0 m/s)";
                 vertCol = new Color(1f, 0.9f, 0.2f);
             }
             GUI.color = vertCol;
-            GUI.Label(new Rect(32, 88, 300, 20), $"Orientasi  : {vertStatus}");
+            GUI.Label(new Rect(32, 88, 300, 20), $"Fisika     : {vertStatus}");
 
-            // Bar Kemudi Belok (-100% s/d +100%)
-            string steerTxt = (Mathf.Abs(turnInput) < 0.08f) ? "Lurus (Deadzone)" : (turnInput < 0 ? $"Kiri ({Mathf.Abs(turnInput) * 100:F0}%)" : $"Kanan ({turnInput * 100:F0}%)");
+            // Bar Kemudi Lean to Turn (-100% s/d +100%)
+            string steerTxt = (Mathf.Abs(turnInput) < 0.06f) ? "Tengah (Lurus)" : (turnInput < 0 ? $"Condong Kiri ({Mathf.Abs(turnInput) * 100:F0}%)" : $"Condong Kanan ({turnInput * 100:F0}%)");
             GUI.color = Color.white;
-            GUI.Label(new Rect(32, 108, 300, 20), $"Kemudi     : {steerTxt}");
+            GUI.Label(new Rect(32, 108, 300, 20), $"Kemudi Lean: {steerTxt}");
 
             Rect barBg = new Rect(32, 130, 290, 10);
             GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
@@ -442,7 +429,7 @@ namespace DragonWingAR.UI
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 11
             };
-            GUI.Label(bgRect, "Elytra CV: Kepak Tangan=Fly Up+Speed Up | Pose T=Glide (-5°) | Pose Gambar=Tuck Dive (-45°) | Tilt=Belok || KB: Space=Flap | S=Dive | W/Y=Climb | A/D=Kemudi", guideStyle);
+            GUI.Label(bgRect, "Mekanik Sky Peck: Kepak Tangan = Flap to Climb ↑ | Condongkan Badan / Tilt = Lean to Turn & Bank | Tekuk Tangan = Tuck to Dive ↓ | Rentang Tangan = Glide", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)

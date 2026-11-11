@@ -372,22 +372,28 @@ namespace DragonWingAR.CV
                 }
             }
 
-            // 2. Kemudi Belok Horizontal (Berdasarkan perbedaan tinggi pergelangan tangan)
+            // 2. Kemudi Belok & Banking ala Sky Peck (Kombinasi Kemiringan Lengan / Arm Tilt + Condong Torso / Torso Lean)
+            Vector2 midShoulder = (_smoothedLS + _smoothedRS) * 0.5f;
+            Vector2 midHip = (_smoothedLH + _smoothedRH) * 0.5f;
+            float shoulderDist = Vector2.Distance(_smoothedLS, _smoothedRS);
+            if (shoulderDist < 0.05f) shoulderDist = 0.20f;
+
+            // a. Arm Tilt (Beda tinggi pergelangan tangan kiri vs kanan)
             float tiltDelta = _smoothedLW.y - _smoothedRW.y;
-            if (Mathf.Abs(tiltDelta) < turnDeadzone)
-            {
-                _turnInput = 0f;
-            }
-            else
-            {
-                _turnInput = Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
-            }
+            float armTurn = (Mathf.Abs(tiltDelta) < turnDeadzone) ? 0f : Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
+
+            // b. Torso Lean (Pergeseran sumbu bahu terhadap sumbu panggul)
+            float torsoDelta = (midShoulder.x - midHip.x) / shoulderDist;
+            float torsoTurn = (Mathf.Abs(torsoDelta) < 0.07f) ? 0f : Mathf.Clamp(torsoDelta * 2.2f, -1f, 1f);
+
+            // c. Gabungan Lean to Turn ala Sky Peck: Pemain dapat berbelok dengan memiringkan tangan atau mencondongkan badan
+            float combinedLean = (armTurn * 0.5f) + (torsoTurn * 0.5f);
+            if (Mathf.Abs(combinedLean) < 0.04f) combinedLean = 0f;
+            _turnInput = Mathf.Clamp(combinedLean * 1.25f, -1f, 1f);
 
             // 3. Deteksi Gestur Dinamis Minecraft Elytra:
             // a. TUCK DIVE (Foto Pengguna: Tangan mengepal di dada, siku mengarah ke bawah):
             float wristDist = Vector2.Distance(_smoothedLW, _smoothedRW);
-            float shoulderDist = Vector2.Distance(_smoothedLS, _smoothedRS);
-            if (shoulderDist < 0.05f) shoulderDist = 0.20f;
 
             bool elbowsBelowWrists = (_smoothedLE.y > _smoothedLW.y + 0.03f) && (_smoothedRE.y > _smoothedRW.y + 0.03f);
             bool elbowsBelowShoulders = (_smoothedLE.y > _smoothedLS.y + 0.05f) && (_smoothedRE.y > _smoothedRS.y + 0.05f);
@@ -423,7 +429,6 @@ namespace DragonWingAR.CV
 
             // c. ORIENTASI BADAN (Body Pitch: -1.0 s/d +1.0):
             // Fallback kalkulasi internal jika data Python UDP tidak menyertakan token ke-22
-            Vector2 midShoulder = (_smoothedLS + _smoothedRS) * 0.5f;
             float headDist = midShoulder.y - _smoothedNose.y;
             float headRatio = headDist / shoulderDist;
             float internalBodyPitch = 0f;

@@ -1,4 +1,4 @@
-# 📋 PRODUCT REQUIREMENTS DOCUMENT (PRD) & DEVELOPMENT PLAYBOOK: AR DRAGON SKY GUARDIAN (v5.0)
+# 📋 PRODUCT REQUIREMENTS DOCUMENT (PRD) & DEVELOPMENT PLAYBOOK: AR DRAGON SKY GUARDIAN (v5.1)
 
 > **Catatan Penamaan:** Project Unity = `AR Dragon Sky Guardian`, folder Python = `ARDragonSkyGuardian_CV`. Namespace C# = `DragonWingAR.*`.
 > **Mod Kerja:** Kolaborasi Manusia (User/Developer) + AI Agent (Hermes / Antigravity Agent).
@@ -8,16 +8,16 @@
 
 ## 🎯 1. VISI & TUJUAN PRODUK
 
-AR Dragon Sky Guardian adalah game *PC exergaming* 3D berbasis input Computer Vision (kamera webcam) yang memadukan kebebasan simulasi penerbangan naga di atas pulau semi-terbuka (*semi-open-world*) dengan gameplay edukatif penyelamatan lingkungan.
+AR Dragon Sky Guardian adalah game *PC exergaming* 3D berbasis input Computer Vision (kamera webcam) yang memadukan kebebasan simulasi penerbangan naga alami ala **Sky Peck** di atas pulau semi-terbuka (*semi-open-world*) dengan gameplay edukatif penyelamatan lingkungan.
 
 ### Sasaran Utama:
 1. **Zero-Equipment Barrier:** Pemain hanya membutuhkan laptop/PC berkamera standar tanpa memerlukan sensor mahal (seperti Kinect atau VR headset).
-2. **Kontrol Tubuh Alami Berbasis Minecraft Elytra Dynamics:**
-   - **Mengepakkan Tangan (Wing Flapping):** Menghasilkan *Fly Up + Speed Up* (akselerasi dorongan maju kinetik $+14\text{ m/s}^2$ + gaya angkat vertikal $+3.5\text{ m/s}$).
-   - **Pose T (Elytra Glide):** Meluncur maju dengan sedikit dive (glide slope $-5^\circ$) dan kecepatan jelajah stabil $14\text{ m/s}$.
-   - **Tuck Dive (Pose di Foto Pengguna):** Tangan mengepal di dada atas, siku ke bawah di samping badan, menghasilkan terjun menukik tajam (pitch $-45^\circ$) dengan akselerasi gravitasi tinggi mencapai $24 - 28\text{ m/s}$.
-   - **Kebebasan Orientasi 3D Non-Locking:** Naga bergerak ke arah moncong badannya. Begitu hidung diarahkan ke atas langit, dorongan naga membawanya terbang menanjak ke angkasa, mengonversi kecepatan dive menjadi pendakian (*zoom climb soaring*).
-   - **Kemudi Belok & Roll:** Kemiringan tangan membelokkan arah kompas yaw ($65^\circ/\text{s}$) dan memiringkan sayap naga secara visual ($\pm 35^\circ$).
+2. **Kontrol Tubuh Alami Berbasis Mekanik Sky Peck:**
+   - **Flap to Climb (Mengepakkan Tangan):** Menghasilkan daya angkat vertikal halus ($+6.5\text{ m/s}$) + dorongan maju ($+12\text{ m/s}^2$). **Decoupled:** Bebas dari goyangan pitch nodding bolak-balik saat tangan diayun naik-turun.
+   - **Glide (Rentangkan Sayap):** Meluncur jelajah santai dengan sink rate alami yang anggun ($-1.0\text{ m/s}$) pada kecepatan $14\text{ m/s}$.
+   - **Tuck to Dive (Pose Foto Pengguna):** Tangan mengepal di dada atas, siku mengarah ke bawah di samping badan, memicu terjun menukik tajam (pitch $-45^\circ$) dengan akselerasi tinggi hingga $28\text{ m/s}$.
+   - **Swoop Climb Out of Dive:** Membuka sayap setelah dive secara otomatis mengonversi kelebihan kecepatan kinetik menjadi luncuran melambung menanjak (*swoop soaring climb*) yang megah ke angkasa.
+   - **Lean to Bank & Turn:** Kemiringan kombinasi torso ($50\%$) dan lengan ($50\%$) membelokkan arah yaw ($65^\circ/\text{s}$) dan memiringkan sayap naga secara visual ($\pm 35^\circ$).
 3. **Performa Tinggi & Bebas Lag:**
    - Inferensi AI YOLOv8n-pose $\le 15\text{ ms}$ di GPU CUDA.
    - Komunikasi UDP lokal tanpa jeda input (*instant response*).
@@ -33,7 +33,7 @@ AR Dragon Sky Guardian adalah game *PC exergaming* 3D berbasis input Computer Vi
 | **Sesi 1** | Evaluasi & Penguncian Model CV | ✅ **SELESAI** | Model YOLOv8n-pose terpilih, stabilisasi One-Euro filter, head-crop mouth tracker. |
 | **Sesi 2** | Integrasi Socket UDP & Navigasi Terbang | ✅ **SELESAI** | UDP 5052 (Pose) & 5053 (PIP Video), Ground raycast protection, Keyboard fallback zero-conflict. |
 | **Sesi 3** | Integrasi Aset 3D & In-Game HUD | ✅ **SELESAI** | `Dragon_Model.blend` (Skala 5m, URP Lit double-sided), `pulau.blend` (800x800m), InGameFlightHUD lengkap. |
-| **Sesi 4 (NEW)** | Dinamika Penerbangan Minecraft Elytra 3D | ✅ **SELESAI** | True 3D flight direction, Tuck Dive (foto pengguna), Flapping boost, Pertukaran energi kinetik gravitasi, CSV UDP 21-float. |
+| **Sesi 4 (NEW)** | Mekanik Penerbangan Ala Sky Peck | ✅ **SELESAI** | Flap to Climb (decoupled), Lean to Turn & Bank, Tuck to Dive ($28\text{ m/s}$), Swoop Climb otomatis, HUD Sky Peck. |
 | **Sesi 5** | Zona 3 Desa, Mekanik Misi, & VFX | ⏳ **SELANJUTNYA** | `VillageZoneController` di 3 Pad desa, sistem timer, partikel polusi/kebakaran/kekeringan, dan audio ambience. |
 | **Sesi 6** | UI Lobby, Sistem Bintang, & Build PC | ⏳ **TERAKHIR** | Menu pemilihan level, skor bintang 1-3, sound effects, dan ekspor executable `.exe` Windows. |
 
