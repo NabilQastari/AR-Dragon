@@ -153,6 +153,13 @@ Modul Python dan Unity berkomunikasi melalui 2 port socket UDP terpisah berkecep
 - **Fungsi di Unity:** Didekodekan langsung oleh `InGameFlightHUD.cs` menggunakan `Texture2D.LoadImage(bytes)` dan ditampilkan di kotak preview kanan atas layar.
 - **Fallback Otomatis:** Jika Python video stream belum aktif, kotak PIP secara otomatis menampilkan radar kerangka (*interactive skeleton wireframe*) lengkap dengan sendi siku dan indikator mode Elytra.
 
+### 4.3 Peluncur Proses Otomatis (PythonProcessManager.cs)
+- **Zero-Manual Launch:** Pemain/Developer **tidak perlu lagi membuka terminal terpisah** untuk menjalankan Python.
+- **Auto-Lifecycle:**
+  1. **Saat Play Mode / Game Dimulai (`Awake()`):** `PythonProcessManager.cs` mendeteksi keberadaan `venv/Scripts/python.exe` dan `active_cv_sender.py`, lalu meluncurkannya sebagai child process Windows dengan PID yang dipantau.
+  2. **Saat Play Mode / Game Berhenti (`ExitingPlayMode` / `OnApplicationQuit`):** Proses Python dihentikan seketika dengan `process.Kill()` dan *Windows TaskKill tree fallback* (`taskkill /PID {pid} /F /T`) sehingga webcam langsung dilepaskan tanpa tersangkut (zero-lock).
+- **Indikator HUD:** In-Game HUD menampilkan status koneksi live `Python CV : AKTIF (PID: xxxxx) [AUTO-SYNC]`.
+
 ---
 
 ## 5. KONTROL AKSI DESA & AUTO-HOVER

@@ -54,6 +54,7 @@ AR Dragon Sky Guardian adalah game *PC exergaming* 3D berbasis input Computer Vi
 
 ### 🕹️ SESI 2: NAVIGASI PENERBANGAN 3D & ELYTRA DYNAMICS (SELESAI ✅)
 - **Komponen Unity:**
+  - `PythonProcessManager.cs`: Mengelola lifecycle proses `active_cv_sender.py` secara otomatis. Menjalankan Python saat Unity dimainkan (`Play Mode`) dan menghentikannya seketika saat Unity keluar (`OnApplicationQuit` / `ExitingPlayMode`), sehingga pemain tidak perlu lagi membuka terminal terpisah.
   - `UDPPoseReceiver.cs`: Mendengarkan UDP `5052`, mem-parsing data CSV 21-float, mendeteksi gestur Elytra (Tuck Dive, Flapping, T-Pose, Climb), serta menyediakan fallback keyboard zero-conflict yang tidak menimpa data kamera.
   - `DragonFlightController.cs`:
     - **Minecraft Elytra 3D Physics:** Vektor gerak maju searah hadap hidung 3D (`transform.forward * airspeed`).

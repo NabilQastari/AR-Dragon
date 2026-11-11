@@ -40,6 +40,10 @@ namespace DragonWingAR.CV
         [Tooltip("Aktifkan kontrol keyboard otomatis saat UDP tidak menerima data")]
         public bool enableKeyboardFallback = true;
 
+        [Header("Peluncur Python Otomatis")]
+        [Tooltip("Jalankan modul active_cv_sender.py otomatis saat game dimulai")]
+        public bool autoLaunchPython = true;
+
         // ==========================================
         // Implementasi Properti IPoseProvider
         // ==========================================
@@ -132,6 +136,15 @@ namespace DragonWingAR.CV
 
         private void Awake()
         {
+            if (autoLaunchPython)
+            {
+                PythonProcessManager manager = GetComponent<PythonProcessManager>() ?? FindFirstObjectByType<PythonProcessManager>();
+                if (manager == null)
+                {
+                    manager = gameObject.AddComponent<PythonProcessManager>();
+                }
+            }
+
             StartUDPListener();
         }
 
@@ -151,11 +164,13 @@ namespace DragonWingAR.CV
         private void OnDestroy()
         {
             StopUDPListener();
+            PythonProcessManager.Instance?.StopPython();
         }
 
         private void OnApplicationQuit()
         {
             StopUDPListener();
+            PythonProcessManager.Instance?.StopPython();
         }
 
         private void StartUDPListener()

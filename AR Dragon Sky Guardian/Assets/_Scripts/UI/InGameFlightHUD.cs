@@ -326,7 +326,7 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawFlightHUD()
         {
-            Rect hudRect = new Rect(20, 20, 330, 185);
+            Rect hudRect = new Rect(20, 20, 330, 208);
             GUI.color = Color.white;
             GUI.DrawTexture(hudRect, _boxBgTexture);
             DrawOutline(hudRect, 1, new Color(0.2f, 0.8f, 1f, 0.6f));
@@ -402,10 +402,18 @@ namespace DragonWingAR.UI
             bool dive = poseReceiver != null && poseReceiver.IsTuckDive;
 
             string gestStr = $"Aksi: {(flap ? "[KEPAK]" : "")} {(dive ? "[DIVE]" : "")} {(water ? "[SEMBUR AIR]" : "")} {(high ? "[HUJAN EMBUN]" : "")}";
-            if (!flap && !dive && !water && !high) gestStr = "Aksi: Menjelajah Meluncur (Elytra)";
+            if (!flap && !dive && !water && !high) gestStr = "Aksi: Menjelajah Meluncur (Sky Peck)";
 
             GUI.color = water ? Color.cyan : (dive ? new Color(1f, 0.4f, 0f) : (flap ? Color.green : Color.yellow));
             GUI.Label(new Rect(32, 148, 300, 20), gestStr);
+
+            // Status Peluncur Otomatis Python CV
+            PythonProcessManager pyMgr = PythonProcessManager.Instance;
+            bool pyRunning = pyMgr != null && pyMgr.IsProcessRunning;
+            int pyPid = pyRunning ? pyMgr.ProcessId : 0;
+            string pyStatus = pyRunning ? $"AKTIF (PID: {pyPid}) [AUTO-SYNC]" : (_isVideoConnected ? "TERKONEKSI EKSTERNAL" : "OFFLINE / STANDBY");
+            GUI.color = pyRunning ? new Color(0.2f, 1f, 0.5f) : (_isVideoConnected ? Color.cyan : new Color(0.7f, 0.7f, 0.7f));
+            GUI.Label(new Rect(32, 168, 300, 20), $"Python CV  : {pyStatus}");
         }
 
         /// <summary>

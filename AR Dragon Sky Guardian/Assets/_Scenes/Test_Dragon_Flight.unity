@@ -1980,6 +1980,7 @@ GameObject:
   - component: {fileID: 1235239322}
   - component: {fileID: 1235239321}
   - component: {fileID: 1235239320}
+  - component: {fileID: 1235239326}
   m_Layer: 0
   m_Name: Dragon_Player
   m_TagString: Untagged
@@ -2018,25 +2019,37 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DragonWingAR.Controllers.DragonFlightController
   poseProviderSource: {fileID: 0}
-  forwardSpeed: 12
+  cruiseSpeed: 14
+  minSpeed: 7
+  maxDiveSpeed: 28
+  glideSinkRate: 1
+  flapLiftPower: 5.5
+  flapThrustAccel: 14
+  maxFlapSpeed: 22
+  diveAcceleration: 18
+  tuckDivePitch: -45
+  swoopEfficiency: 0.85
   yawTurnSpeed: 65
-  currentAltitude: 22
-  minAltitude: 5
-  maxAltitude: 140
-  climbSpeed: 8
-  diveSpeed: 10
-  altitudeSmoothSpeed: 4
-  visualModel: {fileID: 1774336174}
   maxRollAngle: 35
-  maxPitchAngle: 20
-  attitudeSmoothSpeed: 8
+  yawSmoothSpeed: 8
+  rollSmoothSpeed: 7
+  pitchSmoothSpeed: 4.5
+  visualModel: {fileID: 1774336174}
+  minGroundClearance: 3.5
+  maxAltitude: 140
   hoverRotateSpeed: 3.5
   hoverBobAmplitude: 0.4
   hoverBobFrequency: 2
+  _currentAirspeed: 14
+  _currentVerticalVelocity: 0
+  _currentPitch: -5
+  _currentYaw: 0
+  _currentRoll: 0
   _isHovering: 0
+  _isTuckDiving: 0
+  _isFlapping: 0
+  _isSwoopClimbing: 0
   _currentTurnInput: 0
-  _currentPitchInput: 0
-  _currentSpeed: 0
   _hoverLookTarget: {x: 0, y: 0, z: 0}
 --- !u!114 &1235239322
 MonoBehaviour:
@@ -2056,16 +2069,20 @@ MonoBehaviour:
   turnDeadzone: 0.08
   turnMultiplier: 2.5
   enableKeyboardFallback: 1
+  autoLaunchPython: 1
   _isConnected: 0
   _isPoseDetected: 0
   _turnInput: 0
   _pitchInput: 0
+  _bodyPitch: 0
   _isYPose: 0
   _isTPose: 1
   _isAPose: 0
+  _isTuckDive: 0
+  _isFlapping: 0
+  _flapPower: 0
   _smoothedMouth: 0
   _isWaterBreathing: 0
-  _isFlapping: 0
   _isHandsTogether: 0
   _isHandsHighUp: 0
   showDebugGUI: 0
@@ -2134,6 +2151,30 @@ Transform:
   - {fileID: 1774336174}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1235239326
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1235239319}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26788f03ab3244a4c9ff1d64c591777d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DragonWingAR.CV.PythonProcessManager
+  autoLaunchPython: 1
+  runHeadless: 0
+  hideConsoleWindow: 1
+  targetIp: 127.0.0.1
+  posePort: 5052
+  videoPort: 5053
+  customPythonExecutable: 
+  customScriptPath: 
+  _isProcessRunning: 0
+  _processId: 0
+  _resolvedPythonPath: 
+  _resolvedScriptPath: 
 --- !u!1 &1267264867
 GameObject:
   m_ObjectHideFlags: 0
