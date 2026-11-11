@@ -273,8 +273,22 @@ namespace DragonWingAR.UI
                 }
                 else if (poseReceiver.IsFlapping)
                 {
-                    handCol = new Color(0.1f, 1f, 0.4f);
-                    poseLabel = "● KEPAK SAYAP (FLY UP + SPEED UP)";
+                    float bp = poseReceiver.BodyPitch;
+                    if (bp > 0.18f)
+                    {
+                        handCol = new Color(0f, 1f, 0.85f);
+                        poseLabel = "● KEPAK SAYAP (NAIK MENANJAK ↑)";
+                    }
+                    else if (bp < -0.18f)
+                    {
+                        handCol = new Color(1f, 0.6f, 0.1f);
+                        poseLabel = "● KEPAK SAYAP (MENUKIK TURUN ↓)";
+                    }
+                    else
+                    {
+                        handCol = new Color(0.1f, 1f, 0.4f);
+                        poseLabel = "● KEPAK SAYAP (MAJU CEPAT)";
+                    }
                 }
                 else if (poseReceiver.IsYPose)
                 {
@@ -346,8 +360,22 @@ namespace DragonWingAR.UI
             }
             else if (poseReceiver != null && poseReceiver.IsFlapping)
             {
-                vertStatus = $"KEPAK SAYAP: SPEED UP + FLY UP (Pitch: {pitch:F0}°)";
-                vertCol = new Color(0.1f, 1f, 0.4f);
+                float bp = poseReceiver.BodyPitch;
+                if (bp > 0.18f)
+                {
+                    vertStatus = $"KEPAK: NAIK MENANJAK ↑ (Pitch: {pitch:F0}°)";
+                    vertCol = new Color(0f, 1f, 0.85f);
+                }
+                else if (bp < -0.18f)
+                {
+                    vertStatus = $"KEPAK: MENUKIK TURUN ↓ (Pitch: {pitch:F0}°)";
+                    vertCol = new Color(1f, 0.6f, 0.1f);
+                }
+                else
+                {
+                    vertStatus = $"KEPAK: MAJU CEPAT [SPEED UP] (Pitch: {pitch:F0}°)";
+                    vertCol = new Color(0.1f, 1f, 0.4f);
+                }
             }
             else if (poseReceiver != null && poseReceiver.IsYPose)
             {

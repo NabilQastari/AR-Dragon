@@ -91,7 +91,7 @@ def main():
 
             mouth = 1.0 if (math.sin(t * 0.8) > 0.7) else 0.0
 
-            # 1. Kirim pose CSV ke Unity (21 float)
+            # 1. Kirim pose CSV ke Unity (21-24 float)
             sender.send_pose(
                 ls, rs, lw, rw, lh, rh,
                 mouth_open=mouth,
@@ -99,7 +99,9 @@ def main():
                 is_dive=is_dive,
                 is_flap=is_flap,
                 flap_freq=flap_freq,
-                flap_power=flap_power
+                flap_power=flap_power,
+                body_pitch=(1.0 if cycle >= 12.0 else (-1.0 if (8.0 <= cycle < 12.0) else 0.0)),
+                nose=(0.50, 0.24)
             )
 
             # 2. Gambar frame sintetis untuk video PIP port 5053

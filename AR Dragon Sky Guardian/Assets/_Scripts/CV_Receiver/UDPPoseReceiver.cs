@@ -59,6 +59,7 @@ namespace DragonWingAR.CV
         public bool IsWaterBreathing => _isWaterBreathing;
         public float TurnInput => _turnInput;
         public float PitchInput => _pitchInput;
+        public float BodyPitch => _bodyPitch;
 
         public bool IsYPose => _isYPose;
         public bool IsTPose => _isTPose;
@@ -79,6 +80,7 @@ namespace DragonWingAR.CV
         [SerializeField] private bool _isPoseDetected = false;
         [SerializeField] private float _turnInput = 0f;
         [SerializeField] private float _pitchInput = 0f;
+        [SerializeField] private float _bodyPitch = 0f;
         [SerializeField] private bool _isYPose = false;
         [SerializeField] private bool _isTPose = true;
         [SerializeField] private bool _isAPose = false;
@@ -98,6 +100,7 @@ namespace DragonWingAR.CV
         private Vector2 _smoothedRE = new Vector2(0.68f, 0.50f);
         private Vector2 _smoothedLH = new Vector2(0.42f, 0.70f);
         private Vector2 _smoothedRH = new Vector2(0.58f, 0.70f);
+        private Vector2 _smoothedNose = new Vector2(0.50f, 0.25f);
 
         // Thread-safe raw data buffer
         private readonly object _dataLock = new object();
@@ -107,12 +110,15 @@ namespace DragonWingAR.CV
         private Vector2 _rawLS, _rawRS, _rawLW, _rawRW, _rawLH, _rawRH;
         private Vector2 _rawLE = new Vector2(0.32f, 0.50f);
         private Vector2 _rawRE = new Vector2(0.68f, 0.50f);
+        private Vector2 _rawNose = new Vector2(0.50f, 0.25f);
         private bool _hasElbows = false;
         private bool _hasExtendedFlags = false;
+        private bool _hasBodyPitch = false;
         private bool _rawIsDiveFlag = false;
         private bool _rawIsFlapFlag = false;
         private float _rawFlapFreq = 0f;
         private float _rawFlapPower = 0f;
+        private float _rawBodyPitch = 0f;
         private float _rawMouth = 0f;
 
         // Gestur State Timers & Tracking
@@ -283,6 +289,21 @@ namespace DragonWingAR.CV
                     _hasExtendedFlags = false;
                 }
 
+                if (tokens.Length >= 22)
+                {
+                    _rawBodyPitch = v[21];
+                    _hasBodyPitch = true;
+                }
+                else
+                {
+                    _hasBodyPitch = false;
+                }
+
+                if (tokens.Length >= 24)
+                {
+                    _rawNose = new Vector2(v[22], v[23]);
+                }
+
                 _lastPacketMs = _stopwatch.ElapsedMilliseconds;
                 _hasNewPacket = true;
             }
@@ -293,11 +314,11 @@ namespace DragonWingAR.CV
             long nowMs = _stopwatch.ElapsedMilliseconds;
             bool hadRecentPacket = (nowMs - _lastPacketMs) <= (long)(timeoutSeconds * 1000f);
 
-            Vector2 targetLS, targetRS, targetLW, targetRW, targetLH, targetRH, targetLE, targetRE;
-            float targetMouth;
+            Vector2 targetLS, targetRS, targetLW, targetRW, targetLH, targetRH, targetLE, targetRE, targetNose;
+            float targetMouth, targetBodyPitch;
             bool pyDiveFlag, pyFlapFlag;
             float pyFlapPower;
-            bool hasElbowsData, hasFlagsData;
+            bool hasElbowsData, hasFlagsData, hasBodyPitchData;
 
             lock (_dataLock)
             {
@@ -312,12 +333,15 @@ namespace DragonWingAR.CV
                 targetRH = _rawRH;
                 targetLE = _rawLE;
                 targetRE = _rawRE;
+                targetNose = _rawNose;
                 targetMouth = _rawMouth;
+                targetBodyPitch = _rawBodyPitch;
                 pyDiveFlag = _rawIsDiveFlag;
                 pyFlapFlag = _rawIsFlapFlag;
                 pyFlapPower = _rawFlapPower;
                 hasElbowsData = _hasElbows;
                 hasFlagsData = _hasExtendedFlags;
+                hasBodyPitchData = _hasBodyPitch;
             }
 
             // 1. Pelicinan Koordinat Vector2.Lerp (smoothingSpeed = 12f)
@@ -331,6 +355,7 @@ namespace DragonWingAR.CV
                 _smoothedRW = Vector2.Lerp(_smoothedRW, targetRW, lerpFactor);
                 _smoothedLH = Vector2.Lerp(_smoothedLH, targetLH, lerpFactor);
                 _smoothedRH = Vector2.Lerp(_smoothedRH, targetRH, lerpFactor);
+                _smoothedNose = Vector2.Lerp(_smoothedNose, targetNose, lerpFactor);
                 _smoothedMouth = Mathf.Lerp(_smoothedMouth, targetMouth, lerpFactor);
 
                 if (hasElbowsData)
@@ -340,7 +365,6 @@ namespace DragonWingAR.CV
                 }
                 else
                 {
-                    // Estimasi posisi siku natural jika tidak dikirim dari paket lama
                     Vector2 midL = (_smoothedLS + _smoothedLW) * 0.5f;
                     Vector2 midR = (_smoothedRS + _smoothedRW) * 0.5f;
                     _smoothedLE = Vector2.Lerp(_smoothedLE, midL + new Vector2(-0.03f, 0.04f), lerpFactor);
@@ -397,21 +421,51 @@ namespace DragonWingAR.CV
             _isFlapping = (_flapTimer > 0f);
             if (!_isFlapping) _flapPower = 0f;
 
-            // c. POSE Y (Climb: Tangan diangkat ke atas diagonal)
+            // c. ORIENTASI BADAN (Body Pitch: -1.0 s/d +1.0):
+            // Fallback kalkulasi internal jika data Python UDP tidak menyertakan token ke-22
+            Vector2 midShoulder = (_smoothedLS + _smoothedRS) * 0.5f;
+            float headDist = midShoulder.y - _smoothedNose.y;
+            float headRatio = headDist / shoulderDist;
+            float internalBodyPitch = 0f;
+
+            if (_isFlapping)
+            {
+                // Saat mengepak: Periksa apakah busur kepakan tangan diarahkan tinggi ke atas kepala
+                float armAimOffset = midShoulder.y - curWristY;
+                if (armAimOffset > 0.07f)
+                {
+                    internalBodyPitch = Mathf.Clamp01((armAimOffset - 0.07f) / 0.12f);
+                }
+                else if (armAimOffset < -0.10f)
+                {
+                    internalBodyPitch = -Mathf.Clamp01((Mathf.Abs(armAimOffset) - 0.10f) / 0.12f);
+                }
+                else
+                {
+                    internalBodyPitch = 0f;
+                }
+            }
+            else
+            {
+                float headSignal = (headRatio - 0.48f) / 0.14f;
+                if (Mathf.Abs(headSignal) > 0.22f)
+                {
+                    internalBodyPitch = Mathf.Clamp(Mathf.Sign(headSignal) * (Mathf.Abs(headSignal) - 0.22f) / 0.78f, -1f, 1f);
+                }
+            }
+
+            float rawBP = hasBodyPitchData ? targetBodyPitch : internalBodyPitch;
+            _bodyPitch = Mathf.Lerp(_bodyPitch, rawBP, lerpFactor);
+
+            // d. POSE Y & A vs KEPAKAN SAYAP (DECOUPLING LENGKAP):
+            // Saat tangan dikepakkan naik-turun, gerakan ayunan tangan TIDAK BOLEH memicu Pose Y atau Pose A!
+            // Flapping itu sendiri adalah daya dorong (Speed Up + Fly Up), BUKAN kontrol kemudi pitch angguk-angguk!
             float dyL = _smoothedLW.y - _smoothedLS.y;
             float dyR = _smoothedRW.y - _smoothedRS.y;
             float avgDeltaY = (dyL + dyR) * 0.5f;
 
-            bool isYDetected = ((dyL < -0.025f && dyR < -0.025f) ||
-                                (avgDeltaY < -0.035f) ||
-                                (dyL < -0.06f && dyR < 0.02f) ||
-                                (dyR < -0.06f && dyL < 0.02f)) && !_isTuckDive;
-
-            // d. POSE A (Turun meluncur konvensional)
-            bool isADetected = ((dyL > 0.035f && dyR > 0.035f) ||
-                                (avgDeltaY > 0.045f) ||
-                                (dyL > 0.06f && dyR > -0.02f) ||
-                                (dyR > 0.06f && dyL > -0.02f)) && !_isTuckDive;
+            bool isYDetected = ((dyL < -0.04f && dyR < -0.04f) || (avgDeltaY < -0.05f)) && !_isTuckDive && !_isFlapping;
+            bool isADetected = ((dyL > 0.05f && dyR > 0.05f) || (avgDeltaY > 0.06f)) && !_isTuckDive && !_isFlapping;
 
             if (_isTuckDive)
             {
@@ -419,6 +473,14 @@ namespace DragonWingAR.CV
                 _isYPose = false;
                 _isTPose = false;
                 _pitchInput = -1.0f; // Dive tajam
+            }
+            else if (_isFlapping)
+            {
+                // SAAT MENGEPAK: Reset isYPose & isAPose agar naga TIDAK melihat ke atas lalu ke bawah!
+                _isYPose = false;
+                _isAPose = false;
+                _isTPose = false;
+                _pitchInput = _bodyPitch; // Pitch input mengikuti orientasi badan jika ada
             }
             else if (isYDetected)
             {
@@ -540,6 +602,25 @@ namespace DragonWingAR.CV
                     _isFlapping = true;
                     _flapTimer = 0.5f;
                     _flapPower = 1.0f;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _isTPose = false;
+
+                    if (keyPitchUp)
+                    {
+                        _bodyPitch = 1.0f;
+                        _pitchInput = 1.0f;
+                    }
+                    else if (keyPitchDown)
+                    {
+                        _bodyPitch = -1.0f;
+                        _pitchInput = -0.6f;
+                    }
+                    else
+                    {
+                        _bodyPitch = 0.0f;
+                        _pitchInput = -0.05f;
+                    }
                 }
 
                 // Aksi Khusus Desa
@@ -624,6 +705,25 @@ namespace DragonWingAR.CV
                     _isFlapping = true;
                     _flapTimer = 0.5f;
                     _flapPower = 1.0f;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _isTPose = false;
+
+                    if (keyPitchUp)
+                    {
+                        _bodyPitch = 1.0f;
+                        _pitchInput = 1.0f;
+                    }
+                    else if (keyPitchDown)
+                    {
+                        _bodyPitch = -1.0f;
+                        _pitchInput = -0.6f;
+                    }
+                    else
+                    {
+                        _bodyPitch = 0.0f;
+                        _pitchInput = -0.05f;
+                    }
                 }
             }
             catch (Exception) { }

@@ -231,7 +231,7 @@ namespace DragonWingAR.Controllers
             }
 
             // 2. Kalkulasi Target Pitch (Sudut Hidung Naga):
-            // Positif = mendongak ke atas langit, Negatif = menunduk menukik ke bawah
+            // Positif = mendongak ke atas langit (+), Negatif = menunduk menukik ke bawah (-)
             float targetPitch = tposeGlidePitch; // Default T-Pose (-5 deg)
 
             if (_isTuckDiving)
@@ -239,15 +239,38 @@ namespace DragonWingAR.Controllers
                 // Pose Foto Pengguna: Dive terjun cepat (-45 deg)
                 targetPitch = tuckDivePitch;
             }
+            else if (_isFlapping)
+            {
+                // SAAT MENGEPAK: Orientasi TIDAK BERUBAH kecuali badan diarahkan ke atas/bawah!
+                // Gerakan tangan naik-turun TIDAK BOLEH membuat naga melihat ke atas lalu ke bawah.
+                float bodyPitch = (_poseProvider != null) ? _poseProvider.BodyPitch : 0f;
+
+                if (bodyPitch > 0.18f)
+                {
+                    // Badan diarahkan ke atas: naga mendongak menanjak ke langit!
+                    targetPitch = Mathf.Lerp(8f, climbPitch, Mathf.Clamp01((bodyPitch - 0.18f) / 0.82f));
+                }
+                else if (bodyPitch < -0.18f)
+                {
+                    // Badan diarahkan ke bawah: naga menunduk ke bawah
+                    targetPitch = Mathf.Lerp(-5f, -22f, Mathf.Clamp01((-bodyPitch - 0.18f) / 0.82f));
+                }
+                else
+                {
+                    // Badan netral: Pertahankan orientasi jelajah stabil mendatar (glide pitch -5 deg)
+                    // Bebas dari goyangan atau angguk-angguk!
+                    targetPitch = tposeGlidePitch;
+                }
+            }
             else if (_poseProvider != null && _poseProvider.IsYPose)
             {
-                // Pose Y: Menanjak mendongak ke atas (+32 deg)
+                // Pose Y Sustained (Tangan ditahan di atas, tidak mengepak): Menanjak mendongak ke atas (+32 deg)
                 float climbFactor = Mathf.Clamp01(_currentPitchInput);
                 targetPitch = Mathf.Lerp(12f, climbPitch, climbFactor);
             }
             else if (_poseProvider != null && _poseProvider.IsAPose)
             {
-                // Pose A: Menurun moderat (-25 deg)
+                // Pose A Sustained (Tangan ditahan di samping paha): Menurun moderat (-25 deg)
                 targetPitch = -25f;
             }
             else

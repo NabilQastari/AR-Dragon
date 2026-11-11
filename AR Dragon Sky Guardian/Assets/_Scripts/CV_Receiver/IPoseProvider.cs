@@ -39,6 +39,7 @@ namespace DragonWingAR.CV
         // ==========================================
         float TurnInput { get; }            // -1.0f (belok kiri tajam) s/d +1.0f (belok kanan tajam)
         float PitchInput { get; }           // -1.0f (Turun/Dive) s/d +1.0f (Naik/Climb)
+        float BodyPitch { get; }            // -1.0f (Badan condong/arah bawah) s/d +1.0f (Badan condong/arah atas), 0.0f = netral mendatar
         bool IsYPose { get; }               // Pose "Y": Kedua tangan diangkat ke atas diagonal -> Arahkan badan ke atas (Climb)
         bool IsTPose { get; }               // Pose "T": Kedua tangan mendatar sejajar bahu -> Meluncur maju sedikit dive (-5 deg)
         bool IsAPose { get; }               // Pose "A": Kedua tangan menyerong ke paha -> Turun meluncur

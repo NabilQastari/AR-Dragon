@@ -33,9 +33,11 @@ class PoseUDPSender:
         is_flap: float = 0.0,
         flap_freq: float = 0.0,
         flap_power: float = 0.0,
+        body_pitch: float = 0.0,
+        nose: Optional[Tuple[float, float]] = None,
     ) -> bool:
         """
-        Mengirim 13 nilai dasar, serta jika ada mengirim siku dan gestur flag (total 21 nilai).
+        Mengirim 13 nilai dasar, serta jika ada mengirim siku dan gestur flag (total 21-24 nilai).
         """
         try:
             def clamp(val: float) -> float:
@@ -58,8 +60,15 @@ class PoseUDPSender:
                     f"{1.0 if is_dive > 0.5 else 0.0:.1f}",
                     f"{1.0 if is_flap > 0.5 else 0.0:.1f}",
                     f"{float(flap_freq):.2f}",
-                    f"{clamp(flap_power):.2f}"
+                    f"{clamp(flap_power):.2f}",
+                    f"{max(-1.0, min(1.0, float(body_pitch))):.2f}"
                 ])
+
+                if nose is not None:
+                    parts.extend([
+                        f"{clamp(nose[0]):.4f}",
+                        f"{clamp(nose[1]):.4f}"
+                    ])
 
             csv_string = ",".join(parts)
             self.sock.sendto(csv_string.encode("utf-8"), (self.ip, self.port))

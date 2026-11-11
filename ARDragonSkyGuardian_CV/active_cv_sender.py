@@ -202,28 +202,73 @@ def main():
                 if has_recent_flap or is_active_flapping:
                     is_flapping = True
 
-                # c. POSE Y (Arahkan badan ke atas / Climb)
-                is_y = ((dy_l < -0.03 and dy_r < -0.03) or (avg_dy < -0.04) or
-                        (dy_l < -0.07 and dy_r < 0.02) or (dy_r < -0.07 and dy_l < 0.02)) and not is_tuck_dive
+                # c. ORIENTASI BADAN (Body Pitch: -1.0 s/d +1.0)
+                # Dihitung dari rasio ketinggian hidung terhadap bahu dan kemiringan torso
+                mid_s_x = (ls[0] + rs[0]) * 0.5
+                mid_s_y = (ls[1] + rs[1]) * 0.5
+                head_dist = mid_s_y - raw_nose_y
+                sw = max(0.10, shoulder_dist)
+                head_ratio = head_dist / sw
+
+                # Signal orientasi kepala/badan (netral ~ 0.48)
+                head_signal = (head_ratio - 0.48) / 0.14
+                head_signal = max(-1.0, min(1.0, head_signal))
+                if abs(head_signal) < 0.22:
+                    head_signal = 0.0
+                else:
+                    head_signal = math.copysign((abs(head_signal) - 0.22) / 0.78, head_signal)
+
+                # d. DECOUPLING: Saat tangan dikepakkan, ayunan tangan TIDAK BOLEH memicu Pose Y / Pose A!
+                if is_flapping:
+                    is_y = False
+                    is_a = False
+
+                    # Periksa apakah busur ayunan kepakan diarahkan ke atas kepala (high arc) atau ke bawah (low arc)
+                    avg_wrist_y = (lw[1] + rw[1]) * 0.5
+                    arm_aim_offset = mid_s_y - avg_wrist_y  # Positif jika tangan mengepak di atas bahu
+                    if arm_aim_offset > 0.08:
+                        flap_aim = min(1.0, (arm_aim_offset - 0.08) / 0.12)
+                    elif arm_aim_offset < -0.12:
+                        flap_aim = -min(1.0, (abs(arm_aim_offset) - 0.12) / 0.12)
+                    else:
+                        flap_aim = 0.0
+
+                    # Badan diarahkan ke atas jika kepala mendongak atau kepakan sayap di atas kepala
+                    body_pitch = 0.55 * head_signal + 0.45 * flap_aim
+                else:
+                    body_pitch = head_signal
+                    # Barulah jika TIDAK mengepak, pose Y sustained atau pose A sustained aktif
+                    is_y = ((dy_l < -0.04 and dy_r < -0.04) or (avg_dy < -0.05)) and not is_tuck_dive
+                    is_a = ((dy_l > 0.05 and dy_r > 0.05) or (avg_dy > 0.06)) and not is_tuck_dive
 
                 # Tentukan label dan warna status untuk HUD
                 if is_tuck_dive:
                     vert_mode_str = "DIVE TERJUN (TUCK DIVE ↓↓)"
                     vert_mode_color = (0, 100, 255)
                 elif is_flapping:
-                    vert_mode_str = "KEPAK SAYAP (FLY UP + SPEED UP)"
-                    vert_mode_color = (0, 255, 120)
+                    if body_pitch > 0.20:
+                        vert_mode_str = f"KEPAK: NAIK KE ATAS ↑ (+{body_pitch*100:.0f}%)"
+                        vert_mode_color = (0, 255, 200)
+                    elif body_pitch < -0.20:
+                        vert_mode_str = f"KEPAK: MENUKIK TURUN ↓ ({body_pitch*100:.0f}%)"
+                        vert_mode_color = (0, 180, 255)
+                    else:
+                        vert_mode_str = "KEPAK: MAJU CEPAT [SPEED UP]"
+                        vert_mode_color = (0, 255, 120)
                 elif is_y:
-                    vert_mode_str = "ARAH ATAS (CLIMB SOARING ↑)"
+                    vert_mode_str = "POSE Y: CLIMB SOARING ↑"
                     vert_mode_color = (0, 255, 220)
+                elif is_a:
+                    vert_mode_str = "POSE A: TURUN MELUNCUR ↓"
+                    vert_mode_color = (0, 160, 255)
                 else:
-                    vert_mode_str = "POSE T (ELYTRA GLIDE ~ -5°)"
+                    vert_mode_str = "POSE T: ELYTRA GLIDE (~ -5°)"
                     vert_mode_color = (255, 220, 60)
 
             # 3. Inferensi Mulut Terbuka via Crop Area Kepala
             is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_crop(frame, head_pos)
 
-            # 4. Pengiriman Paket UDP ke Unity (13 float dasar + siku & flag gestur)
+            # 4. Pengiriman Paket UDP ke Unity (13 float dasar + siku + flag gestur + body_pitch + nose)
             if pose_detected:
                 udp_mouth_val = 1.0 if is_water_breathing else mouth_score
                 sender.send_pose(
@@ -233,7 +278,9 @@ def main():
                     is_dive=1.0 if is_tuck_dive else 0.0,
                     is_flap=1.0 if is_flapping else 0.0,
                     flap_freq=flap_freq,
-                    flap_power=flap_power
+                    flap_power=flap_power,
+                    body_pitch=body_pitch,
+                    nose=(raw_nose_x, raw_nose_y)
                 )
 
             latency_ms = (time.perf_counter() - t_start) * 1000.0
