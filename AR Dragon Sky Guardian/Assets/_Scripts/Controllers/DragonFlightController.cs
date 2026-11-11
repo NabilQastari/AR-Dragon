@@ -5,11 +5,15 @@ namespace DragonWingAR.Controllers
 {
     /// <summary>
     /// Pengendali utama penerbangan naga (Dragon Flight Controller).
-    /// Mengimplementasikan prinsip desain PRD & Konteks:
-    /// 1. Auto-Forward: Naga bergerak maju otomatis dengan kecepatan 12 m/s.
-    /// 2. Fixed Altitude: Ketinggian naga dijaga stabil pada Y = 15 m.
-    /// 3. Kemudi Belok & Roll: Putaran Yaw (65 deg/s) dan kemiringan visual Roll (-turnInput * 35 deg).
-    /// 4. Auto-Hover: Mengambang di tempat saat memasuki zona desa dan menghadap ke pusat desa.
+    /// Mengimplementasikan prinsip dinamika penerbangan Minecraft Elytra:
+    /// 1. True 3D Flight: Naga bergerak bebas dalam 3D ke arah hadap badannya (transform.forward).
+    /// 2. Konversi Energi Kinetik (Gravity Energy Exchange): Menukik (dive) berakselerasi kencang;
+    ///    menanjak (climb) mengonversi kecepatan menjadi ketinggian (zoom climb).
+    /// 3. Kepakan Sayap (Flapping): Fly Up + Speed Up (daya dorong maju kinetik + gaya angkat vertikal).
+    /// 4. Pose T (Elytra Glide): Meluncur ke depan dengan sedikit dive (-5 deg) dan kecepatan jelajah stabil.
+    /// 5. Pose Gambar (Tuck Dive): Terjun menukik tajam (-45 deg) dengan kecepatan tinggi 22-28 m/s.
+    /// 6. Proteksi Daratan: Otomatis meratakan hidung naga saat mendekati lereng bukit pulau.
+    /// 7. Auto-Hover: Mengambang di tempat saat berada di zona desa.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class DragonFlightController : MonoBehaviour
@@ -19,49 +23,67 @@ namespace DragonWingAR.Controllers
         [SerializeField] private MonoBehaviour poseProviderSource;
         private IPoseProvider _poseProvider;
 
-        [Header("Parameter Terbang Maju")]
-        [Tooltip("Kecepatan terbang maju otomatis (sesuai konteks.md = 12f)")]
-        public float forwardSpeed = 12f;
+        [Header("Parameter Kecepatan Udara (Minecraft Elytra Physics)")]
+        [Tooltip("Kecepatan jelajah standar saat meluncur T-Pose (m/s)")]
+        public float cruiseSpeed = 14f;
 
-        [Tooltip("Kecepatan putar arah naga / Yaw (sesuai konteks.md = 65f)")]
+        [Tooltip("Batas kecepatan stall minimum (m/s)")]
+        public float minSpeed = 7f;
+
+        [Tooltip("Batas kecepatan maksimum saat dive terjun cepat (m/s)")]
+        public float maxDiveSpeed = 28f;
+
+        [Tooltip("Kekuatan akselerasi gravitasi saat menukik / deselerasi saat menanjak")]
+        public float gravityAccel = 18f;
+
+        [Tooltip("Koefisien hambatan udara jelajah normal")]
+        public float cruiseDrag = 0.45f;
+
+        [Tooltip("Koefisien hambatan udara saat tuck dive (aerodinamis terlipat)")]
+        public float diveDrag = 0.12f;
+
+        [Header("Dinamika Kepakan Sayap (Fly Up + Speed Up)")]
+        [Tooltip("Akselerasi daya dorong maju saat tangan mengepak (m/s^2)")]
+        public float flapThrustAccel = 14f;
+
+        [Tooltip("Gaya angkat vertikal langsung saat tangan mengepak (m/s)")]
+        public float flapLiftVelocity = 3.5f;
+
+        [Tooltip("Kecepatan maksimum dorongan kepakan di bidang datar")]
+        public float maxFlapSpeed = 22f;
+
+        [Header("Kontrol Sudut Orientasi 3D (Pitch, Yaw, Roll)")]
+        [Tooltip("Kecepatan putar kemudi belok horizontal (Yaw deg/s)")]
         public float yawTurnSpeed = 65f;
 
-        [Header("Parameter Terbang Vertikal (Naik & Turun)")]
-        [Tooltip("Ketinggian naga saat ini")]
-        public float currentAltitude = 22f;
+        [Tooltip("Sudut pitch saat T-Pose Elytra Glide (sedikit dive, derajat)")]
+        public float tposeGlidePitch = -5f;
 
-        /// <summary>
-        /// Properti kompatibilitas untuk fixed altitude lama
-        /// </summary>
-        public float fixedAltitudeY { get => currentAltitude; set => currentAltitude = value; }
+        [Tooltip("Sudut pitch saat Tuck Dive (Pose Foto Pengguna, derajat)")]
+        public float tuckDivePitch = -45f;
 
-        [Tooltip("Ketinggian minimum di atas daratan")]
-        public float minAltitude = 5f;
+        [Tooltip("Sudut pitch saat menanjak Pose Y (derajat)")]
+        public float climbPitch = 32f;
 
-        [Tooltip("Ketinggian maksimum jelajah (mampu melewati puncak gunung 120m)")]
-        public float maxAltitude = 140f;
-
-        [Tooltip("Kecepatan menanjak naik saat Pose Y (m/s)")]
-        public float climbSpeed = 10f;
-
-        [Tooltip("Kecepatan menukik turun saat Pose A (m/s)")]
-        public float diveSpeed = 12f;
-
-        [Tooltip("Kecepatan transisi smoothing ketinggian")]
-        public float altitudeSmoothSpeed = 8f;
-
-        [Header("Model Visual & Kemiringan Dinamis")]
-        [Tooltip("Transform child model naga untuk efek kemiringan visual (Banking Roll & Pitch)")]
-        public Transform visualModel;
-
-        [Tooltip("Sudut kemiringan visual Roll maksimal saat belok tajam (sesuai konteks.md = 35f)")]
+        [Tooltip("Sudut kemiringan visual Roll maksimal saat belok tajam (derajat)")]
         public float maxRollAngle = 35f;
 
-        [Tooltip("Sudut kemiringan visual Pitch maksimal saat menanjak/menukik (derajat)")]
-        public float maxPitchAngle = 22f;
+        [Tooltip("Kecepatan pelicinan rotasi Pitch")]
+        public float pitchSmoothSpeed = 4.5f;
 
-        [Tooltip("Kecepatan transisi kemiringan model visual")]
-        public float attitudeSmoothSpeed = 10f;
+        [Tooltip("Kecepatan pelicinan kemiringan sayap Roll")]
+        public float rollSmoothSpeed = 7.0f;
+
+        [Header("Model Visual")]
+        [Tooltip("Transform child model naga untuk penyesuaian rotasi mikro visual")]
+        public Transform visualModel;
+
+        [Header("Proteksi Ketinggian Daratan (Terrain Safety)")]
+        [Tooltip("Jarak minimum aman di atas daratan pulau (meter)")]
+        public float minGroundClearance = 3.5f;
+
+        [Tooltip("Ketinggian maksimum jelajah di angkasa")]
+        public float maxAltitude = 160f;
 
         [Header("Pengaturan Auto-Hover (Saat di Desa)")]
         [Tooltip("Kecepatan naga memutar badan menghadap pusat desa saat hovering")]
@@ -73,20 +95,30 @@ namespace DragonWingAR.Controllers
         [Tooltip("Frekuensi gerak mengambang naik-turun saat hover")]
         public float hoverBobFrequency = 2.0f;
 
-        [Header("Status Telemetri (Read Only)")]
+        [Header("Status Telemetri Penerbangan (Read Only)")]
+        [SerializeField] private float _currentAirspeed = 14f;
+        [SerializeField] private float _currentPitch = -5f;
+        [SerializeField] private float _currentYaw = 0f;
+        [SerializeField] private float _currentRoll = 0f;
         [SerializeField] private bool _isHovering = false;
+        [SerializeField] private bool _isTuckDiving = false;
+        [SerializeField] private bool _isFlapping = false;
         [SerializeField] private float _currentTurnInput = 0f;
         [SerializeField] private float _currentPitchInput = 0f;
-        [SerializeField] private float _currentSpeed = 0f;
         [SerializeField] private Vector3 _hoverLookTarget;
 
         private Rigidbody _rb;
 
+        // Properti Kompatibilitas Publik
         public bool IsHovering => _isHovering;
-        public float CurrentSpeed => _currentSpeed;
+        public float CurrentSpeed => _currentAirspeed;
+        public float forwardSpeed { get => cruiseSpeed; set => cruiseSpeed = value; }
         public float CurrentTurnInput => _currentTurnInput;
         public float CurrentPitchInput => _currentPitchInput;
-        public float CurrentAltitude => currentAltitude;
+        public float CurrentPitch => _currentPitch;
+        public float CurrentAltitude => transform.position.y;
+        public float currentAltitude { get => transform.position.y; set { } }
+        public float fixedAltitudeY { get => transform.position.y; set { } }
 
         private void Awake()
         {
@@ -97,20 +129,13 @@ namespace DragonWingAR.Controllers
                 _rb.useGravity = false;
             }
 
-            // Inisialisasi Pose Provider
             ResolvePoseProvider();
-
-            // Pastikan model visual terpisah agar roll & pitch visual tidak mengganggu arah maju
             SetupVisualModel();
 
-            // Set ketinggian awal naga sesuai posisi awal
-            if (currentAltitude <= 1f)
-            {
-                currentAltitude = transform.position.y > 1f ? transform.position.y : 22f;
-            }
-            Vector3 initPos = transform.position;
-            initPos.y = currentAltitude;
-            transform.position = initPos;
+            // Inisialisasi yaw dari rotasi awal naga di scene
+            _currentYaw = transform.eulerAngles.y;
+            _currentPitch = tposeGlidePitch;
+            _currentAirspeed = cruiseSpeed;
         }
 
         private void ResolvePoseProvider()
@@ -129,7 +154,6 @@ namespace DragonWingAR.Controllers
         {
             if (visualModel != null) return;
 
-            // Cari child bernama "Visual" atau "Model"
             Transform childVisual = transform.Find("Visual") ?? transform.Find("Model") ?? transform.Find("Visual_Dragon");
             if (childVisual != null)
             {
@@ -137,7 +161,6 @@ namespace DragonWingAR.Controllers
             }
             else if (transform.childCount > 0)
             {
-                // Gunakan child pertama selain Camera
                 for (int i = 0; i < transform.childCount; i++)
                 {
                     Transform c = transform.GetChild(i);
@@ -148,29 +171,24 @@ namespace DragonWingAR.Controllers
                     }
                 }
             }
-
-            // Jika tidak ada child, buat empty container sebagai referensi visual
-            if (visualModel == null)
-            {
-                GameObject dummyVisual = new GameObject("Visual_Root");
-                dummyVisual.transform.SetParent(transform, false);
-                visualModel = dummyVisual.transform;
-            }
         }
 
         private void Update()
         {
-            // Ambil input kemudi dari Pose Provider / Keyboard Fallback
             if (_poseProvider != null)
             {
                 _currentTurnInput = _poseProvider.TurnInput;
                 _currentPitchInput = _poseProvider.PitchInput;
+                _isTuckDiving = _poseProvider.IsTuckDive;
+                _isFlapping = _poseProvider.IsFlapping;
             }
             else
             {
                 ResolvePoseProvider();
                 _currentTurnInput = 0f;
                 _currentPitchInput = 0f;
+                _isTuckDiving = false;
+                _isFlapping = false;
             }
 
             if (_isHovering)
@@ -179,151 +197,186 @@ namespace DragonWingAR.Controllers
             }
             else
             {
-                HandleFlightMovement();
+                HandleElytraFlightPhysics();
             }
-
-            // Update kemiringan roll & pitch model visual (visual banking & attitude)
-            UpdateVisualAttitude();
         }
 
         /// <summary>
-        /// Pergerakan terbang naga dengan navigasi 3D lengkap:
-        /// 1. Auto-Forward: Maju otomatis (kecepatan bertambah saat menukik / dive boost).
-        /// 2. Ketinggian Dinamis: Naik saat kepak sayap, turun saat dive pose, stabil saat T-pose.
-        /// 3. Kemudi Belok: Putaran Yaw (65 deg/s) berdasarkan kemiringan tangan.
+        /// Simulasi Fisika Penerbangan Minecraft Elytra 3D Sejati:
+        /// - Orientasi badan 3D bebas (Pitch, Yaw, Roll).
+        /// - Maju searah badan (transform.forward * airspeed).
+        /// - Menukik menghasilkan percepatan gravitasi tinggi (hingga 28 m/s).
+        /// - Menanjak mengonversi kecepatan menjadi ketinggian (climb soaring).
+        /// - Flapping memberikan dorongan Speed Up + Fly Up.
+        /// - Proteksi daratan meratakan hidung naga saat dekat tanah.
         /// </summary>
-        private void HandleFlightMovement()
+        private void HandleElytraFlightPhysics()
         {
-            // 1. Maju Otomatis dengan Dinamika Kecepatan (Dive Boost)
-            float speedModifier = 1.0f;
-            if (_currentPitchInput < -0.1f)
-            {
-                // Menukik: gravitasi menambah kecepatan hingga +35% (misal 12 -> 16.2 m/s)
-                speedModifier += Mathf.Abs(_currentPitchInput) * 0.35f;
-            }
-            else if (_currentPitchInput > 0.1f)
-            {
-                // Menanjak: hambatan gravitasi sedikit melambatkan maju (misal 12 -> 10.5 m/s)
-                speedModifier -= _currentPitchInput * 0.12f;
-            }
+            float dt = Time.deltaTime;
+            if (dt <= 0f) return;
 
-            _currentSpeed = forwardSpeed * speedModifier;
-            Vector3 moveDelta = transform.forward * (_currentSpeed * Time.deltaTime);
-            transform.position += moveDelta;
-
-            // 2. Kontrol Ketinggian Vertikal Dinamis (Sistem Alfabet: Y = NAIK, T = LURUS, A = TURUN)
-            bool isClimbing = (_poseProvider != null && _poseProvider.IsYPose) || _currentPitchInput > 0.05f;
-            bool isDiving = (_poseProvider != null && _poseProvider.IsAPose) || _currentPitchInput < -0.05f;
-
-            if (isClimbing)
-            {
-                float factor = Mathf.Max(0.7f, Mathf.Abs(_currentPitchInput));
-                currentAltitude += factor * climbSpeed * Time.deltaTime;
-            }
-            else if (isDiving)
-            {
-                float factor = Mathf.Max(0.7f, Mathf.Abs(_currentPitchInput));
-                currentAltitude -= factor * diveSpeed * Time.deltaTime;
-            }
-            // Catatan: Jika T-Pose, currentAltitude dipertahankan stabil di ketinggian jelajah saat ini!
-
-            // Raycast proteksi ketinggian daratan: naga tidak akan pernah menembus ke dalam tanah pulau
-            float terrainSurfaceY = 0f;
-            Ray groundRay = new Ray(new Vector3(transform.position.x, 300f, transform.position.z), Vector3.down);
+            // 1. Raycast Permukaan Daratan (Terrain Clearance Check)
+            float groundDistance = 999f;
+            float groundSurfaceY = 0f;
+            Ray groundRay = new Ray(transform.position + Vector3.up * 1f, Vector3.down);
             int mask = ~LayerMask.GetMask("Ignore Raycast");
+
             if (Physics.Raycast(groundRay, out RaycastHit gHit, 500f, mask))
             {
                 if (gHit.collider.gameObject != gameObject && !gHit.collider.transform.IsChildOf(transform))
                 {
-                    terrainSurfaceY = gHit.point.y;
+                    groundSurfaceY = gHit.point.y;
+                    groundDistance = transform.position.y - groundSurfaceY;
                 }
             }
 
-            float safeMin = Mathf.Max(minAltitude, terrainSurfaceY + 2.5f);
-            currentAltitude = Mathf.Clamp(currentAltitude, safeMin, maxAltitude);
+            // 2. Kalkulasi Target Pitch (Sudut Hidung Naga):
+            // Positif = mendongak ke atas langit, Negatif = menunduk menukik ke bawah
+            float targetPitch = tposeGlidePitch; // Default T-Pose (-5 deg)
 
-            Vector3 currentPos = transform.position;
-            currentPos.y = Mathf.Lerp(currentPos.y, currentAltitude, Time.deltaTime * altitudeSmoothSpeed);
-            transform.position = currentPos;
+            if (_isTuckDiving)
+            {
+                // Pose Foto Pengguna: Dive terjun cepat (-45 deg)
+                targetPitch = tuckDivePitch;
+            }
+            else if (_poseProvider != null && _poseProvider.IsYPose)
+            {
+                // Pose Y: Menanjak mendongak ke atas (+32 deg)
+                float climbFactor = Mathf.Clamp01(_currentPitchInput);
+                targetPitch = Mathf.Lerp(12f, climbPitch, climbFactor);
+            }
+            else if (_poseProvider != null && _poseProvider.IsAPose)
+            {
+                // Pose A: Menurun moderat (-25 deg)
+                targetPitch = -25f;
+            }
+            else
+            {
+                // T-Pose Elytra Glide: Sedikit dive (-5 deg)
+                targetPitch = tposeGlidePitch;
+            }
 
-            // 3. Putaran Arah Kemudi (Yaw Turn)
+            // Proteksi Daratan: Jika terlalu dekat tanah bukit, hidung naga tidak boleh menukik ke bawah!
+            if (groundDistance < 8.0f)
+            {
+                float groundAvoidanceFactor = Mathf.Clamp01((8.0f - groundDistance) / 5.0f);
+                targetPitch = Mathf.Max(targetPitch, Mathf.Lerp(0f, 15f, groundAvoidanceFactor));
+            }
+
+            // Pelicinan Pitch
+            _currentPitch = Mathf.Lerp(_currentPitch, targetPitch, dt * pitchSmoothSpeed);
+
+            // 3. Kemudi Belok (Yaw) & Kemiringan Sayap (Roll Banking):
             if (Mathf.Abs(_currentTurnInput) > 0.001f)
             {
-                float yawDelta = _currentTurnInput * yawTurnSpeed * Time.deltaTime;
-                transform.Rotate(Vector3.up, yawDelta, Space.World);
+                _currentYaw += _currentTurnInput * yawTurnSpeed * dt;
+            }
+
+            float targetRoll = -_currentTurnInput * maxRollAngle;
+            _currentRoll = Mathf.Lerp(_currentRoll, targetRoll, dt * rollSmoothSpeed);
+
+            // Terapkan Rotasi 3D ke Naga:
+            // Sumbu X Euler: -currentPitch (karena rotasi X negatif di Unity memutar hidung ke atas)
+            transform.rotation = Quaternion.Euler(-_currentPitch, _currentYaw, _currentRoll);
+
+            // 4. Fisika Kecepatan Udara (Minecraft Elytra Physics Model):
+            float pitchRad = _currentPitch * Mathf.Deg2Rad;
+
+            // a. Gravitasi: Menukik menambah kecepatan (-sin(negative) > 0), menanjak mengurangi kecepatan
+            float gravityForce = -Mathf.Sin(pitchRad) * gravityAccel;
+            _currentAirspeed += gravityForce * dt;
+
+            // b. Hambatan Udara (Aerodynamic Drag):
+            float currentDragCoeff = _isTuckDiving ? diveDrag : cruiseDrag;
+            float terminalTarget = _isTuckDiving ? maxDiveSpeed : cruiseSpeed;
+
+            // Menstabilkan kecepatan menuju kecepatan terminal alami glide
+            if (!_isFlapping && _currentPitch <= 5f && _currentPitch >= -10f)
+            {
+                _currentAirspeed = Mathf.Lerp(_currentAirspeed, cruiseSpeed, dt * currentDragCoeff);
+            }
+            else if (_currentAirspeed > terminalTarget)
+            {
+                _currentAirspeed = Mathf.Lerp(_currentAirspeed, terminalTarget, dt * currentDragCoeff);
+            }
+
+            // c. Dinamika Kepakan Sayap (Fly Up + Speed Up):
+            if (_isFlapping)
+            {
+                float flapPower = (_poseProvider != null) ? Mathf.Max(0.7f, _poseProvider.FlapPower) : 1.0f;
+
+                // Speed Up (Dorongan maju akselerasi):
+                _currentAirspeed += flapThrustAccel * flapPower * dt;
+                if (_currentAirspeed > maxFlapSpeed && !_isTuckDiving && _currentPitch > -15f)
+                {
+                    _currentAirspeed = maxFlapSpeed;
+                }
+
+                // Fly Up (Gaya angkat vertikal langsung):
+                transform.position += Vector3.up * (flapLiftVelocity * flapPower * dt);
+            }
+
+            // Batas kecepatan minimum (stall prevention) dan maksimum
+            _currentAirspeed = Mathf.Clamp(_currentAirspeed, minSpeed, maxDiveSpeed);
+
+            // 5. Pergerakan Maju 3D Sejati (Searah Hidung Naga):
+            Vector3 movement = transform.forward * (_currentAirspeed * dt);
+            transform.position += movement;
+
+            // 6. Koreksi Ketinggian Tanah Aman (Ground Clamp Safety):
+            if (groundDistance < minGroundClearance)
+            {
+                Vector3 safePos = transform.position;
+                safePos.y = groundSurfaceY + minGroundClearance;
+                transform.position = safePos;
+
+                // Jika menyentuh batas tanah aman, ratakan hidung dari menukik
+                if (_currentPitch < 0f)
+                {
+                    _currentPitch = Mathf.Lerp(_currentPitch, 0f, dt * 10f);
+                }
+            }
+
+            // Batas ketinggian maksimum jelajah
+            if (transform.position.y > maxAltitude)
+            {
+                Vector3 clampedAlt = transform.position;
+                clampedAlt.y = maxAltitude;
+                transform.position = clampedAlt;
+                if (_currentPitch > 0f) _currentPitch = 0f;
             }
         }
 
         /// <summary>
         /// Mode melayang di tempat (Auto-Hover) saat berada di dalam area desa:
-        /// Berhenti bergerak maju dan secara perlahan menghadapkan naga ke pusat desa.
+        /// Perlahan menghentikan laju maju, meratakan orientasi, dan menghadap ke pusat desa.
         /// </summary>
         private void HandleHoverState()
         {
-            _currentSpeed = Mathf.Lerp(_currentSpeed, 0f, Time.deltaTime * 5f);
+            float dt = Time.deltaTime;
+            _currentAirspeed = Mathf.Lerp(_currentAirspeed, 0f, dt * 4f);
+            _currentPitch = Mathf.Lerp(_currentPitch, 0f, dt * 5f);
+            _currentRoll = Mathf.Lerp(_currentRoll, 0f, dt * 5f);
 
             // Gerakan mengambang naik-turun halus (hover bobbing)
-            float bobOffsetY = Mathf.Sin(Time.time * hoverBobFrequency) * hoverBobAmplitude;
-            Vector3 pos = transform.position;
-            pos.y = currentAltitude + bobOffsetY;
-            transform.position = pos;
+            float bobOffsetY = Mathf.Sin(Time.time * hoverBobFrequency) * hoverBobAmplitude * dt;
+            transform.position += Vector3.up * bobOffsetY;
 
-            // Memutar badan secara halus menghadap pusat desa
+            // Hadapkan badan naga ke pusat desa secara halus
             Vector3 dirToTarget = _hoverLookTarget - transform.position;
-            dirToTarget.y = 0f; // Tetap di bidang horizontal (tidak menukik)
+            dirToTarget.y = 0f;
 
             if (dirToTarget.sqrMagnitude > 0.1f)
             {
                 Quaternion targetRot = Quaternion.LookRotation(dirToTarget);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * hoverRotateSpeed);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, dt * hoverRotateSpeed);
+                _currentYaw = transform.eulerAngles.y;
             }
-        }
-
-        /// <summary>
-        /// Memperbarui kemiringan visual (Banking Roll & Pitch) pada visualModel naga.
-        /// - Roll: Miring saat belok kiri/kanan (-turnInput * maxRollAngle).
-        /// - Pitch: Menengadah saat naik (climb) dan menunduk tajam saat menukik (dive).
-        /// - T-Pose: Kembali rata mendatar (0 deg).
-        /// </summary>
-        private void UpdateVisualAttitude()
-        {
-            if (visualModel == null) return;
-
-            float targetRoll = _isHovering ? 0f : (-_currentTurnInput * maxRollAngle);
-
-            // Pitch: Saat Pose Y (Naik), kepala naga mendongak ke atas (-Euler X)
-            // Saat Pose A (Menukik), kepala naga menunduk tajam (+Euler X)
-            float targetPitch = 0f;
-            if (!_isHovering)
-            {
-                if (_poseProvider != null && _poseProvider.IsYPose)
-                {
-                    targetPitch = -maxPitchAngle;
-                }
-                else if (_poseProvider != null && _poseProvider.IsAPose)
-                {
-                    targetPitch = maxPitchAngle;
-                }
-                else
-                {
-                    targetPitch = -_currentPitchInput * maxPitchAngle;
-                }
-            }
-
-            Quaternion targetLocalRot = Quaternion.Euler(targetPitch, 0f, targetRoll);
-
-            visualModel.localRotation = Quaternion.Slerp(
-                visualModel.localRotation,
-                targetLocalRot,
-                Time.deltaTime * attitudeSmoothSpeed
-            );
         }
 
         /// <summary>
         /// Diaktifkan oleh VillageZoneController saat naga memasuki atau meninggalkan area desa.
         /// </summary>
-        /// <param name="hover">True jika naga harus berhenti dan mengambang di desa</param>
-        /// <param name="targetLookAt">Posisi pusat desa yang harus dihadapi oleh naga</param>
         public void SetHoverState(bool hover, Vector3 targetLookAt)
         {
             _isHovering = hover;
@@ -331,7 +384,8 @@ namespace DragonWingAR.Controllers
 
             if (!hover)
             {
-                _currentSpeed = forwardSpeed;
+                _currentAirspeed = cruiseSpeed;
+                _currentPitch = tposeGlidePitch;
             }
         }
     }

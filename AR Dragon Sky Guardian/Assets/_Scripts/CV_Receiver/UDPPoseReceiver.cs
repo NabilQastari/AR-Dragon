@@ -14,7 +14,8 @@ namespace DragonWingAR.CV
     /// <summary>
     /// Penerima data socket UDP dari modul Computer Vision Python (port 5052).
     /// Mengimplementasikan IPoseProvider, melakukan smoothing koordinat via Vector2.Lerp,
-    /// dan menyediakan Keyboard Fallback untuk kemudahan pengujian kapan pun tanpa kamera.
+    /// mendukung gestur dinamis Minecraft Elytra (Flapping, Tuck Dive, T-Pose Glide, Pose Y Climb),
+    /// serta menyediakan Keyboard Fallback otomatis saat offline atau saat tombol ditekan.
     /// </summary>
     public class UDPPoseReceiver : MonoBehaviour, IPoseProvider
     {
@@ -49,6 +50,8 @@ namespace DragonWingAR.CV
         public Vector2 RightShoulder => _smoothedRS;
         public Vector2 LeftWrist => _smoothedLW;
         public Vector2 RightWrist => _smoothedRW;
+        public Vector2 LeftElbow => _smoothedLE;
+        public Vector2 RightElbow => _smoothedRE;
         public Vector2 LeftHip => _smoothedLH;
         public Vector2 RightHip => _smoothedRH;
 
@@ -56,12 +59,15 @@ namespace DragonWingAR.CV
         public bool IsWaterBreathing => _isWaterBreathing;
         public float TurnInput => _turnInput;
         public float PitchInput => _pitchInput;
+
         public bool IsYPose => _isYPose;
         public bool IsTPose => _isTPose;
         public bool IsAPose => _isAPose;
-        public bool IsDiving => _isAPose;
+        public bool IsTuckDive => _isTuckDive;
+        public bool IsDiving => _isTuckDive || _isAPose;
 
         public bool IsFlapping => _isFlapping;
+        public float FlapPower => _flapPower;
         public bool IsHandsTogether => _isHandsTogether;
         public bool IsHandsHighUp => _isHandsHighUp;
 
@@ -76,9 +82,11 @@ namespace DragonWingAR.CV
         [SerializeField] private bool _isYPose = false;
         [SerializeField] private bool _isTPose = true;
         [SerializeField] private bool _isAPose = false;
+        [SerializeField] private bool _isTuckDive = false;
+        [SerializeField] private bool _isFlapping = false;
+        [SerializeField] private float _flapPower = 0f;
         [SerializeField] private float _smoothedMouth = 0f;
         [SerializeField] private bool _isWaterBreathing = false;
-        [SerializeField] private bool _isFlapping = false;
         [SerializeField] private bool _isHandsTogether = false;
         [SerializeField] private bool _isHandsHighUp = false;
 
@@ -86,6 +94,8 @@ namespace DragonWingAR.CV
         private Vector2 _smoothedRS = new Vector2(0.60f, 0.40f);
         private Vector2 _smoothedLW = new Vector2(0.35f, 0.60f);
         private Vector2 _smoothedRW = new Vector2(0.65f, 0.60f);
+        private Vector2 _smoothedLE = new Vector2(0.32f, 0.50f);
+        private Vector2 _smoothedRE = new Vector2(0.68f, 0.50f);
         private Vector2 _smoothedLH = new Vector2(0.42f, 0.70f);
         private Vector2 _smoothedRH = new Vector2(0.58f, 0.70f);
 
@@ -95,11 +105,19 @@ namespace DragonWingAR.CV
         private long _lastPacketMs = -999999;
         private bool _hasNewPacket = false;
         private Vector2 _rawLS, _rawRS, _rawLW, _rawRW, _rawLH, _rawRH;
+        private Vector2 _rawLE = new Vector2(0.32f, 0.50f);
+        private Vector2 _rawRE = new Vector2(0.68f, 0.50f);
+        private bool _hasElbows = false;
+        private bool _hasExtendedFlags = false;
+        private bool _rawIsDiveFlag = false;
+        private bool _rawIsFlapFlag = false;
+        private float _rawFlapFreq = 0f;
+        private float _rawFlapPower = 0f;
         private float _rawMouth = 0f;
 
-        // Gestur State Timers
-        private bool _prevIsAbove = false;
+        // Gestur State Timers & Tracking
         private float _flapTimer = 0f;
+        private float _prevWristY = 0.5f;
 
         // Thread UDP
         private UdpClient _udpClient;
@@ -199,7 +217,6 @@ namespace DragonWingAR.CV
                 }
                 catch (SocketException)
                 {
-                    // Wajar terjadi saat socket ditutup oleh Unity
                     break;
                 }
                 catch (Exception ex)
@@ -213,8 +230,9 @@ namespace DragonWingAR.CV
         }
 
         /// <summary>
-        /// Parsing string CSV 12-float atau 13-float dari modul Python.
-        /// Format: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y[,MOUTH_OPEN]
+        /// Parsing string CSV:
+        /// Format 13 float: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN
+        /// Format 21 float: ... + LE_X,LE_Y,RE_X,RE_Y,IS_DIVE,IS_FLAP,FLAP_FREQ,FLAP_POWER
         /// </summary>
         private void ParsePoseCSV(string csv)
         {
@@ -226,7 +244,7 @@ namespace DragonWingAR.CV
             {
                 if (!float.TryParse(tokens[i], NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]))
                 {
-                    return; // Gagal parsing float
+                    return;
                 }
             }
 
@@ -239,8 +257,31 @@ namespace DragonWingAR.CV
                 _rawLH = new Vector2(v[8], v[9]);
                 _rawRH = new Vector2(v[10], v[11]);
 
-                // Elemen ke-13 adalah skor bukaan mulut
                 _rawMouth = (tokens.Length >= 13) ? v[12] : 0f;
+
+                if (tokens.Length >= 17)
+                {
+                    _rawLE = new Vector2(v[13], v[14]);
+                    _rawRE = new Vector2(v[15], v[16]);
+                    _hasElbows = true;
+                }
+                else
+                {
+                    _hasElbows = false;
+                }
+
+                if (tokens.Length >= 21)
+                {
+                    _rawIsDiveFlag = v[17] > 0.5f;
+                    _rawIsFlapFlag = v[18] > 0.5f;
+                    _rawFlapFreq = v[19];
+                    _rawFlapPower = v[20];
+                    _hasExtendedFlags = true;
+                }
+                else
+                {
+                    _hasExtendedFlags = false;
+                }
 
                 _lastPacketMs = _stopwatch.ElapsedMilliseconds;
                 _hasNewPacket = true;
@@ -252,8 +293,11 @@ namespace DragonWingAR.CV
             long nowMs = _stopwatch.ElapsedMilliseconds;
             bool hadRecentPacket = (nowMs - _lastPacketMs) <= (long)(timeoutSeconds * 1000f);
 
-            Vector2 targetLS, targetRS, targetLW, targetRW, targetLH, targetRH;
+            Vector2 targetLS, targetRS, targetLW, targetRW, targetLH, targetRH, targetLE, targetRE;
             float targetMouth;
+            bool pyDiveFlag, pyFlapFlag;
+            float pyFlapPower;
+            bool hasElbowsData, hasFlagsData;
 
             lock (_dataLock)
             {
@@ -266,10 +310,17 @@ namespace DragonWingAR.CV
                 targetRW = _rawRW;
                 targetLH = _rawLH;
                 targetRH = _rawRH;
+                targetLE = _rawLE;
+                targetRE = _rawRE;
                 targetMouth = _rawMouth;
+                pyDiveFlag = _rawIsDiveFlag;
+                pyFlapFlag = _rawIsFlapFlag;
+                pyFlapPower = _rawFlapPower;
+                hasElbowsData = _hasElbows;
+                hasFlagsData = _hasExtendedFlags;
             }
 
-            // 1. Terapkan Smoothing Vector2.Lerp (sesuai konteks.md = Time.deltaTime * 12f)
+            // 1. Pelicinan Koordinat Vector2.Lerp (smoothingSpeed = 12f)
             float lerpFactor = Mathf.Clamp01(Time.deltaTime * smoothingSpeed);
 
             if (_isConnected)
@@ -281,10 +332,23 @@ namespace DragonWingAR.CV
                 _smoothedLH = Vector2.Lerp(_smoothedLH, targetLH, lerpFactor);
                 _smoothedRH = Vector2.Lerp(_smoothedRH, targetRH, lerpFactor);
                 _smoothedMouth = Mathf.Lerp(_smoothedMouth, targetMouth, lerpFactor);
+
+                if (hasElbowsData)
+                {
+                    _smoothedLE = Vector2.Lerp(_smoothedLE, targetLE, lerpFactor);
+                    _smoothedRE = Vector2.Lerp(_smoothedRE, targetRE, lerpFactor);
+                }
+                else
+                {
+                    // Estimasi posisi siku natural jika tidak dikirim dari paket lama
+                    Vector2 midL = (_smoothedLS + _smoothedLW) * 0.5f;
+                    Vector2 midR = (_smoothedRS + _smoothedRW) * 0.5f;
+                    _smoothedLE = Vector2.Lerp(_smoothedLE, midL + new Vector2(-0.03f, 0.04f), lerpFactor);
+                    _smoothedRE = Vector2.Lerp(_smoothedRE, midR + new Vector2(0.03f, 0.04f), lerpFactor);
+                }
             }
 
-            // 2. Kalkulasi Kemudi Terbang (Berdasarkan perbedaan tinggi pergelangan tangan)
-            // Sesuai konteks.md Bagian 4.1: tiltDelta = LeftWrist.y - RightWrist.y
+            // 2. Kemudi Belok Horizontal (Berdasarkan perbedaan tinggi pergelangan tangan)
             float tiltDelta = _smoothedLW.y - _smoothedRW.y;
             if (Mathf.Abs(tiltDelta) < turnDeadzone)
             {
@@ -295,35 +359,72 @@ namespace DragonWingAR.CV
                 _turnInput = Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
             }
 
-            // 3. Kalkulasi Gestur Terbang Vertikal (Sistem Alfabet: Y = NAIK, T = LURUS, A = TURUN)
-            // Di layar: y = 0 adalah atas layar, y = 1 adalah bawah layar.
-            // dy < 0 artinya pergelangan tangan berada DI ATAS bahu.
-            // dy > 0 artinya pergelangan tangan berada DI BAWAH bahu.
+            // 3. Deteksi Gestur Dinamis Minecraft Elytra:
+            // a. TUCK DIVE (Foto Pengguna: Tangan mengepal di dada, siku mengarah ke bawah):
+            float wristDist = Vector2.Distance(_smoothedLW, _smoothedRW);
+            float shoulderDist = Vector2.Distance(_smoothedLS, _smoothedRS);
+            if (shoulderDist < 0.05f) shoulderDist = 0.20f;
+
+            bool elbowsBelowWrists = (_smoothedLE.y > _smoothedLW.y + 0.03f) && (_smoothedRE.y > _smoothedRW.y + 0.03f);
+            bool elbowsBelowShoulders = (_smoothedLE.y > _smoothedLS.y + 0.05f) && (_smoothedRE.y > _smoothedRS.y + 0.05f);
+            bool wristsAtChest = (_smoothedLW.y > _smoothedLS.y - 0.12f) && (_smoothedRW.y > _smoothedRS.y - 0.12f) &&
+                                 (_smoothedLW.y < _smoothedLH.y - 0.06f) && (_smoothedRW.y < _smoothedRH.y - 0.06f);
+            bool handsCompact = wristDist < (shoulderDist * 1.65f);
+            bool geomTuckDive = elbowsBelowWrists && elbowsBelowShoulders && wristsAtChest && handsCompact;
+
+            _isTuckDive = _isConnected && (hasFlagsData ? pyDiveFlag : geomTuckDive);
+
+            // b. KEPAKAN SAYAP (Flapping: Fly Up + Speed Up):
+            float curWristY = (_smoothedLW.y + _smoothedRW.y) * 0.5f;
+            float wristSpeed = Mathf.Abs(curWristY - _prevWristY) / Mathf.Max(0.001f, Time.deltaTime);
+            _prevWristY = curWristY;
+
+            if (_isConnected && hasFlagsData && pyFlapFlag)
+            {
+                _flapTimer = 0.5f;
+                _flapPower = Mathf.Clamp01(Mathf.Max(0.7f, pyFlapPower));
+            }
+            else if (wristSpeed > 0.8f && !_isTuckDive)
+            {
+                _flapTimer = 0.45f;
+                _flapPower = Mathf.Clamp01(wristSpeed / 2.0f);
+            }
+            else if (_flapTimer > 0f)
+            {
+                _flapTimer -= Time.deltaTime;
+            }
+
+            _isFlapping = (_flapTimer > 0f);
+            if (!_isFlapping) _flapPower = 0f;
+
+            // c. POSE Y (Climb: Tangan diangkat ke atas diagonal)
             float dyL = _smoothedLW.y - _smoothedLS.y;
             float dyR = _smoothedRW.y - _smoothedRS.y;
             float avgDeltaY = (dyL + dyR) * 0.5f;
 
-            // a. POSE "Y" (Kedua tangan diangkat ke atas diagonal -> NAIK)
-            // Ambang yang toleran & responsif (mudah dilakukan baik berdiri maupun duduk di depan laptop)
-            bool isYDetected = (dyL < -0.025f && dyR < -0.025f) ||
-                               (avgDeltaY < -0.035f) ||
-                               (dyL < -0.06f && dyR < 0.02f) ||
-                               (dyR < -0.06f && dyL < 0.02f);
+            bool isYDetected = ((dyL < -0.025f && dyR < -0.025f) ||
+                                (avgDeltaY < -0.035f) ||
+                                (dyL < -0.06f && dyR < 0.02f) ||
+                                (dyR < -0.06f && dyL < 0.02f)) && !_isTuckDive;
 
-            // b. POSE "A" (Kedua tangan diarahkan ke bawah diagonal paha -> TURUN)
-            bool isADetected = (dyL > 0.035f && dyR > 0.035f) ||
-                               (avgDeltaY > 0.045f) ||
-                               (dyL > 0.06f && dyR > -0.02f) ||
-                               (dyR > 0.06f && dyL > -0.02f);
+            // d. POSE A (Turun meluncur konvensional)
+            bool isADetected = ((dyL > 0.035f && dyR > 0.035f) ||
+                                (avgDeltaY > 0.045f) ||
+                                (dyL > 0.06f && dyR > -0.02f) ||
+                                (dyR > 0.06f && dyL > -0.02f)) && !_isTuckDive;
 
-            if (isYDetected)
+            if (_isTuckDive)
+            {
+                _isAPose = true;
+                _isYPose = false;
+                _isTPose = false;
+                _pitchInput = -1.0f; // Dive tajam
+            }
+            else if (isYDetected)
             {
                 _isYPose = true;
                 _isTPose = false;
                 _isAPose = false;
-                _isFlapping = true;
-                _flapTimer = 0.4f;
-
                 float climbStrength = Mathf.Clamp01((-avgDeltaY) / 0.12f);
                 _pitchInput = Mathf.Max(0.65f, climbStrength);
             }
@@ -332,31 +433,26 @@ namespace DragonWingAR.CV
                 _isAPose = true;
                 _isYPose = false;
                 _isTPose = false;
-                _isFlapping = false;
-
                 float diveStrength = Mathf.Clamp01(avgDeltaY / 0.12f);
-                _pitchInput = -Mathf.Max(0.65f, diveStrength);
+                _pitchInput = -Mathf.Max(0.50f, diveStrength);
             }
             else
             {
-                // c. POSE "T" (Kedua tangan mendatar sejajar bahu -> LURUS MENDATAR)
+                // e. POSE T (Elytra Glide: Tangan mendatar, sedikit dive -5 deg)
                 _isTPose = true;
                 _isYPose = false;
                 _isAPose = false;
-                _isFlapping = false;
-                _pitchInput = 0f;
+                _pitchInput = -0.10f; // Sedikit menunduk untuk glide slope alami
             }
 
-            // d. Desa 2 (Wildfire): Sembur Air (Buka Mulut > 0.45f ATAU Tangan Rapat di Dada)
-            _isHandsTogether = (Vector2.Distance(_smoothedLW, _smoothedRW) < 0.14f) &&
-                               (_smoothedLW.y > _smoothedLS.y - 0.05f && _smoothedLW.y < _smoothedLH.y);
+            // f. Semburan Air (Mouth open > 0.45 atau kedua tangan rapat di dada saat bukan dive)
+            _isHandsTogether = (wristDist < 0.12f) && (_smoothedLW.y > _smoothedLS.y) && (_smoothedLW.y < _smoothedLH.y);
+            _isWaterBreathing = (_smoothedMouth > 0.45f) || (_isHandsTogether && !_isTuckDive);
 
-            _isWaterBreathing = (_smoothedMouth > 0.45f) || _isHandsTogether;
-
-            // e. Desa 3 (Drought): Panggil Hujan Embun (Tangan diangkat tinggi di atas kepala)
+            // g. Panggil Hujan Embun (Tangan diangkat tinggi di atas kepala)
             _isHandsHighUp = (_smoothedLW.y < _smoothedLS.y - 0.14f) && (_smoothedRW.y < _smoothedRS.y - 0.14f);
 
-            // 4. Keyboard Fallback (HANYA menimpa jika tombol ditekan secara fisik, atau jika offline)
+            // 4. Keyboard Fallback
             if (enableKeyboardFallback)
             {
                 HandleKeyboardFallback();
@@ -365,13 +461,13 @@ namespace DragonWingAR.CV
 
         /// <summary>
         /// Kontrol keyboard fallback:
-        /// - W / Y / Panah Atas / Spasi : Pose Y (Naik ↑)
-        /// - S / A / Panah Bawah        : Pose A (Turun ↓)
-        /// - T / Tombol Dilepas         : Pose T (Lurus Mendatar)
-        /// - Panah Kiri / Q             : Belok Kiri
-        /// - Panah Kanan / D            : Belok Kanan
-        /// CATATAN: Jika kamera UDP terhubung dan tidak ada tombol yang ditekan,
-        /// metode ini TIDAK AKAN menimpa gestur kamera!
+        /// - Spasi / W : Kepak Sayap (Fly Up + Speed Up)
+        /// - S         : Tuck Dive (Terjun Menukik Tajam -45 deg)
+        /// - T         : T-Pose Elytra Glide (-5 deg)
+        /// - Up / Y    : Pitch Up (Arahkan badan ke atas / Climb)
+        /// - Down      : Pitch Down
+        /// - A / Left  : Belok Kiri
+        /// - D / Right : Belok Kanan
         /// </summary>
         private void HandleKeyboardFallback()
         {
@@ -379,79 +475,87 @@ namespace DragonWingAR.CV
             var kb = Keyboard.current;
             if (kb != null)
             {
-                bool keyUp = kb.upArrowKey.isPressed || kb.wKey.isPressed || kb.spaceKey.isPressed || kb.yKey.isPressed;
-                bool keyDown = kb.downArrowKey.isPressed || kb.sKey.isPressed || kb.aKey.isPressed;
-                bool keyLevel = kb.tKey.isPressed;
+                bool keyFlap = kb.spaceKey.isPressed || kb.wKey.isPressed;
+                bool keyDive = kb.sKey.isPressed;
+                bool keyPitchUp = kb.upArrowKey.isPressed || kb.yKey.isPressed;
+                bool keyPitchDown = kb.downArrowKey.isPressed;
+                bool keyGlide = kb.tKey.isPressed;
                 bool keyLeft = kb.leftArrowKey.isPressed || kb.qKey.isPressed;
                 bool keyRight = kb.rightArrowKey.isPressed || kb.dKey.isPressed;
 
-                bool isAnyVerticalKey = keyUp || keyDown || keyLevel;
-                bool isAnyHorizontalKey = keyLeft || keyRight;
+                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight;
 
-                // JIKA UDP TERHUBUNG & PENGGUNA TIDAK MENYENTUH KEYBOARD:
-                // Biarkan penuh data CV kamera bekerja (JANGAN di-reset ke T-Pose!)
-                if (_isConnected && !isAnyVerticalKey && !isAnyHorizontalKey)
+                // Jika terhubung UDP dan tidak menyentuh keyboard, biarkan data kamera bekerja
+                if (_isConnected && !isAnyAction)
                 {
                     return;
                 }
 
-                // 1. Kemudi Belok Horizontal
-                if (isAnyHorizontalKey || !_isConnected)
+                // Kemudi Belok
+                if (keyLeft || keyRight || !_isConnected)
                 {
                     float h = 0f;
                     if (keyLeft) h -= 1f;
                     if (keyRight) h += 1f;
-
-                    if (isAnyHorizontalKey || !_isConnected)
-                    {
-                        _turnInput = Mathf.Clamp(h, -1f, 1f);
-                    }
+                    _turnInput = Mathf.Clamp(h, -1f, 1f);
                 }
 
-                // 2. Vertikal Pose Y - T - A:
-                if (isAnyVerticalKey || !_isConnected)
+                // Aksi Vertikal / Gestur
+                if (keyDive)
                 {
-                    if (keyUp)
-                    {
-                        _isYPose = true;
-                        _isTPose = false;
-                        _isAPose = false;
-                        _pitchInput = 1.0f;
-                        _isFlapping = true;
-                        _flapTimer = 0.4f;
-                    }
-                    else if (keyDown)
-                    {
-                        _isAPose = true;
-                        _isYPose = false;
-                        _isTPose = false;
-                        _pitchInput = -1.0f;
-                        _isFlapping = false;
-                    }
-                    else if (keyLevel || !_isConnected)
-                    {
-                        _isTPose = true;
-                        _isYPose = false;
-                        _isAPose = false;
-                        _pitchInput = 0f;
-                    }
+                    _isTuckDive = true;
+                    _isAPose = true;
+                    _isYPose = false;
+                    _isTPose = false;
+                    _pitchInput = -1.0f;
+                    _isFlapping = false;
+                }
+                else if (keyPitchUp)
+                {
+                    _isYPose = true;
+                    _isTPose = false;
+                    _isAPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = 1.0f;
+                }
+                else if (keyPitchDown)
+                {
+                    _isAPose = true;
+                    _isYPose = false;
+                    _isTPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = -0.6f;
+                }
+                else if (keyGlide || !_isConnected)
+                {
+                    _isTPose = true;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = -0.10f;
                 }
 
-                // Tombol 1: Simulasi Kepakan Sayap (Desa 1)
+                if (keyFlap)
+                {
+                    _isFlapping = true;
+                    _flapTimer = 0.5f;
+                    _flapPower = 1.0f;
+                }
+
+                // Aksi Khusus Desa
                 if (kb.digit1Key.isPressed || kb.numpad1Key.isPressed)
                 {
                     _isFlapping = true;
-                    _flapTimer = 0.4f;
+                    _flapTimer = 0.5f;
+                    _flapPower = 1.0f;
                 }
 
-                // Tombol 2 atau F: Simulasi Semburan Air Naga (Desa 2)
                 if (kb.digit2Key.isPressed || kb.numpad2Key.isPressed || kb.fKey.isPressed)
                 {
                     _isWaterBreathing = true;
                     _smoothedMouth = 1.0f;
                 }
 
-                // Tombol 3 atau R: Simulasi Panggil Hujan Embun (Desa 3)
                 if (kb.digit3Key.isPressed || kb.numpad3Key.isPressed || kb.rKey.isPressed)
                 {
                     _isHandsHighUp = true;
@@ -460,24 +564,21 @@ namespace DragonWingAR.CV
                 return;
             }
 #else
-            // Fallback Legacy Input Manager
             try
             {
-                bool keyUp = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.Y) || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.Space);
-                bool keyDown = Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.DownArrow);
-                bool keyLevel = Input.GetKey(KeyCode.T);
+                bool keyFlap = Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.W);
+                bool keyDive = Input.GetKey(KeyCode.S);
+                bool keyPitchUp = Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.Y);
+                bool keyPitchDown = Input.GetKey(KeyCode.DownArrow);
+                bool keyGlide = Input.GetKey(KeyCode.T);
                 bool keyLeft = Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.Q);
                 bool keyRight = Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D);
 
-                bool isAnyV = keyUp || keyDown || keyLevel;
-                bool isAnyH = keyLeft || keyRight;
+                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight;
 
-                if (_isConnected && !isAnyV && !isAnyH)
-                {
-                    return;
-                }
+                if (_isConnected && !isAnyAction) return;
 
-                if (isAnyH || !_isConnected)
+                if (keyLeft || keyRight || !_isConnected)
                 {
                     float h = 0f;
                     if (keyLeft) h -= 1f;
@@ -485,48 +586,60 @@ namespace DragonWingAR.CV
                     _turnInput = Mathf.Clamp(h, -1f, 1f);
                 }
 
-                if (isAnyV || !_isConnected)
+                if (keyDive)
                 {
-                    if (keyUp)
-                    {
-                        _pitchInput = 1f;
-                        _isYPose = true;
-                        _isTPose = false;
-                        _isAPose = false;
-                    }
-                    else if (keyDown)
-                    {
-                        _pitchInput = -1f;
-                        _isAPose = true;
-                        _isYPose = false;
-                        _isTPose = false;
-                    }
-                    else if (keyLevel || !_isConnected)
-                    {
-                        _pitchInput = 0f;
-                        _isTPose = true;
-                        _isYPose = false;
-                        _isAPose = false;
-                    }
+                    _isTuckDive = true;
+                    _isAPose = true;
+                    _isYPose = false;
+                    _isTPose = false;
+                    _pitchInput = -1.0f;
+                }
+                else if (keyPitchUp)
+                {
+                    _isYPose = true;
+                    _isTPose = false;
+                    _isAPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = 1.0f;
+                }
+                else if (keyPitchDown)
+                {
+                    _isAPose = true;
+                    _isYPose = false;
+                    _isTPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = -0.6f;
+                }
+                else if (keyGlide || !_isConnected)
+                {
+                    _isTPose = true;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _isTuckDive = false;
+                    _pitchInput = -0.10f;
+                }
+
+                if (keyFlap)
+                {
+                    _isFlapping = true;
+                    _flapTimer = 0.5f;
+                    _flapPower = 1.0f;
                 }
             }
-            catch (Exception)
-            {
-            }
+            catch (Exception) { }
 #endif
         }
 
-        [Tooltip("Tampilkan teks debug teks lawas di pojok kiri atas")]
+        [Tooltip("Tampilkan teks debug status di pojok kiri atas")]
         public bool showDebugGUI = false;
 
         private void OnGUI()
         {
-            // Panel info kecil di pojok kiri atas (hanya aktif jika showDebugGUI = true)
             if (!Application.isPlaying || !showDebugGUI) return;
 
             GUI.color = _isConnected ? Color.green : (enableKeyboardFallback ? Color.yellow : Color.red);
             string status = _isConnected ? "TERHUBUNG (Python UDP)" : (enableKeyboardFallback ? "KEYBOARD FALLBACK AKTIF" : "TERPUTUS");
-            string info = $"[PoseReceiver] {status}\nTurn: {_turnInput:F2} | Flap: {_isFlapping} | Water: {_isWaterBreathing} | High: {_isHandsHighUp}";
+            string info = $"[PoseReceiver] {status}\nTurn: {_turnInput:F2} | Pitch: {_pitchInput:F2} | Flap: {_isFlapping} | Dive: {_isTuckDive}";
             GUI.Label(new Rect(10, 10, 400, 45), info);
         }
     }

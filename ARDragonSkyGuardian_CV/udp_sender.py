@@ -2,15 +2,15 @@
 udp_sender.py
 Modul pengirim data UDP untuk posisi keypoint pose + Status Mulut Terbuka,
 serta pengirim frame video JPEG terkompresi untuk Unity In-Game PIP Preview.
-Format CSV: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN
-- 12 float pertama: Koordinat ternormalisasi (0.0000 - 1.0000)
-- Nilai ke-13: Nilai mulut terbuka (0.0000 = tertutup rapat, 1.0000 = terbuka lebar)
+Format CSV:
+- 13 Float Dasar: LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN
+- Tambahan Dinamis (21 Float): LE_X,LE_Y,RE_X,RE_Y,IS_DIVE,IS_FLAP,FLAP_FREQ,FLAP_POWER
 """
 
 import socket
 import cv2
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 
 class PoseUDPSender:
     def __init__(self, ip: str = "127.0.0.1", port: int = 5052):
@@ -27,23 +27,41 @@ class PoseUDPSender:
         lh: Tuple[float, float],
         rh: Tuple[float, float],
         mouth_open: float = 0.0,
+        le: Optional[Tuple[float, float]] = None,
+        re: Optional[Tuple[float, float]] = None,
+        is_dive: float = 0.0,
+        is_flap: float = 0.0,
+        flap_freq: float = 0.0,
+        flap_power: float = 0.0,
     ) -> bool:
         """
-        Mengirim 12 nilai koordinat tubuh + 1 nilai mulut terbuka (jawOpen).
+        Mengirim 13 nilai dasar, serta jika ada mengirim siku dan gestur flag (total 21 nilai).
         """
         try:
             def clamp(val: float) -> float:
                 return max(0.0, min(1.0, float(val)))
 
-            csv_string = (
-                f"{clamp(ls[0]):.4f},{clamp(ls[1]):.4f},"
-                f"{clamp(rs[0]):.4f},{clamp(rs[1]):.4f},"
-                f"{clamp(lw[0]):.4f},{clamp(lw[1]):.4f},"
-                f"{clamp(rw[0]):.4f},{clamp(rw[1]):.4f},"
-                f"{clamp(lh[0]):.4f},{clamp(lh[1]):.4f},"
-                f"{clamp(rh[0]):.4f},{clamp(rh[1]):.4f},"
+            parts = [
+                f"{clamp(ls[0]):.4f}", f"{clamp(ls[1]):.4f}",
+                f"{clamp(rs[0]):.4f}", f"{clamp(rs[1]):.4f}",
+                f"{clamp(lw[0]):.4f}", f"{clamp(lw[1]):.4f}",
+                f"{clamp(rw[0]):.4f}", f"{clamp(rw[1]):.4f}",
+                f"{clamp(lh[0]):.4f}", f"{clamp(lh[1]):.4f}",
+                f"{clamp(rh[0]):.4f}", f"{clamp(rh[1]):.4f}",
                 f"{clamp(mouth_open):.4f}"
-            )
+            ]
+
+            if le is not None and re is not None:
+                parts.extend([
+                    f"{clamp(le[0]):.4f}", f"{clamp(le[1]):.4f}",
+                    f"{clamp(re[0]):.4f}", f"{clamp(re[1]):.4f}",
+                    f"{1.0 if is_dive > 0.5 else 0.0:.1f}",
+                    f"{1.0 if is_flap > 0.5 else 0.0:.1f}",
+                    f"{float(flap_freq):.2f}",
+                    f"{clamp(flap_power):.2f}"
+                ])
+
+            csv_string = ",".join(parts)
             self.sock.sendto(csv_string.encode("utf-8"), (self.ip, self.port))
             return True
         except Exception:
@@ -82,14 +100,12 @@ class VideoUDPSender:
         if frame is None:
             return False
         try:
-            # Resize ke ukuran thumbnail preview PIP
             small_frame = cv2.resize(frame, self.target_size, interpolation=cv2.INTER_AREA)
             success, encoded_img = cv2.imencode('.jpg', small_frame, self.encode_param)
             if not success:
                 return False
 
             data = encoded_img.tobytes()
-            # UDP MTU safety check (< 65000 bytes)
             if len(data) <= 65000:
                 self.sock.sendto(data, (self.ip, self.port))
                 return True
@@ -108,4 +124,3 @@ class VideoUDPSender:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-

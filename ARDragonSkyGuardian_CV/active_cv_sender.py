@@ -169,36 +169,72 @@ def main():
                         flap_count, flap_state_str, flap_freq, flap_power = flap_detector.update(lw, rw, ls, rs)
                         raw_diff, norm_tilt = compute_smooth_tilt(lw, rw, deadzone=0.035, max_tilt=0.25)
 
-            # 2. Deteksi Manuver Vertikal Alfabet (Pose Y = NAIK, Pose T = LURUS, Pose A = TURUN)
-            vert_mode_str = "POSE T (LURUS)"
-            vert_mode_color = (255, 230, 80)
+            # 2. Deteksi Manuver Dinamis (Minecraft Elytra Flight Dynamics)
+            # - TUCK DIVE (Sesuai Foto Pengguna): Tangan mengepal di dada atas/leher, siku ke bawah -> Dive Terjun Cepat
+            # - KEPAKAN SAYAP (Flapping): Menggerakkan tangan naik-turun -> Fly Up + Speed Up
+            # - POSE Y: Tangan diangkat ke atas -> Mendongak ke atas (Zoom Climb)
+            # - POSE T (Elytra Glide): Tangan merentang mendatar -> Meluncur ke depan dengan sedikit dive (-5 deg)
+            is_tuck_dive = False
+            is_flapping = False
+            is_y = False
+            vert_mode_str = "POSE T (ELYTRA GLIDE)"
+            vert_mode_color = (255, 220, 60)
+
             if pose_detected:
                 dy_l = lw[1] - ls[1]
                 dy_r = rw[1] - rs[1]
                 avg_dy = (dy_l + dy_r) * 0.5
+                wrist_dist = math.hypot(lw[0] - rw[0], lw[1] - rw[1])
 
-                is_y = ((dy_l < -0.025 and dy_r < -0.025) or (avg_dy < -0.035) or
-                        (dy_l < -0.06 and dy_r < 0.02) or (dy_r < -0.06 and dy_l < 0.02))
-                is_a = ((dy_l > 0.035 and dy_r > 0.035) or (avg_dy > 0.045) or
-                        (dy_l > 0.06 and dy_r > -0.02) or (dy_r > 0.06 and dy_l > -0.02))
+                # a. TUCK DIVE (Foto Pengguna): Siku di bawah pergelangan tangan & bahu, tangan rapat di dada
+                elbows_below_wrists = (le[1] > lw[1] + 0.04) and (re[1] > rw[1] + 0.04)
+                elbows_below_shoulders = (le[1] > ls[1] + 0.07) and (re[1] > rs[1] + 0.07)
+                wrists_at_chest = (lw[1] > ls[1] - 0.12) and (rw[1] > rs[1] - 0.12) and (lw[1] < lh[1] - 0.08) and (rw[1] < rh[1] - 0.08)
+                hands_compact = wrist_dist < (shoulder_dist * 1.65)
 
-                if is_y:
-                    vert_mode_str = "POSE Y (NAIK ↑)"
-                    vert_mode_color = (0, 255, 100)
-                elif is_a:
-                    vert_mode_str = "POSE A (TURUN ↓)"
-                    vert_mode_color = (0, 140, 255)
+                if elbows_below_wrists and elbows_below_shoulders and wrists_at_chest and hands_compact:
+                    is_tuck_dive = True
+
+                # b. FLAPPING: Siklus kepakan aktif (Fly Up + Speed Up)
+                now_t = time.perf_counter()
+                has_recent_flap = (now_t - flap_detector.last_flap_time) < 0.60 and (flap_detector.last_flap_time > 0)
+                is_active_flapping = (flap_power > 0.20 and not is_tuck_dive)
+                if has_recent_flap or is_active_flapping:
+                    is_flapping = True
+
+                # c. POSE Y (Arahkan badan ke atas / Climb)
+                is_y = ((dy_l < -0.03 and dy_r < -0.03) or (avg_dy < -0.04) or
+                        (dy_l < -0.07 and dy_r < 0.02) or (dy_r < -0.07 and dy_l < 0.02)) and not is_tuck_dive
+
+                # Tentukan label dan warna status untuk HUD
+                if is_tuck_dive:
+                    vert_mode_str = "DIVE TERJUN (TUCK DIVE ↓↓)"
+                    vert_mode_color = (0, 100, 255)
+                elif is_flapping:
+                    vert_mode_str = "KEPAK SAYAP (FLY UP + SPEED UP)"
+                    vert_mode_color = (0, 255, 120)
+                elif is_y:
+                    vert_mode_str = "ARAH ATAS (CLIMB SOARING ↑)"
+                    vert_mode_color = (0, 255, 220)
                 else:
-                    vert_mode_str = "POSE T (LURUS MENDATAR)"
-                    vert_mode_color = (255, 230, 80)
+                    vert_mode_str = "POSE T (ELYTRA GLIDE ~ -5°)"
+                    vert_mode_color = (255, 220, 60)
 
             # 3. Inferensi Mulut Terbuka via Crop Area Kepala
             is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_crop(frame, head_pos)
 
-            # 4. Pengiriman Paket UDP ke Unity
+            # 4. Pengiriman Paket UDP ke Unity (13 float dasar + siku & flag gestur)
             if pose_detected:
                 udp_mouth_val = 1.0 if is_water_breathing else mouth_score
-                sender.send_pose(ls, rs, lw, rw, lh, rh, mouth_open=udp_mouth_val)
+                sender.send_pose(
+                    ls, rs, lw, rw, lh, rh,
+                    mouth_open=udp_mouth_val,
+                    le=le, re=re,
+                    is_dive=1.0 if is_tuck_dive else 0.0,
+                    is_flap=1.0 if is_flapping else 0.0,
+                    flap_freq=flap_freq,
+                    flap_power=flap_power
+                )
 
             latency_ms = (time.perf_counter() - t_start) * 1000.0
 

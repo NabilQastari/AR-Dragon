@@ -49,8 +49,8 @@ namespace DragonWingAR.UI
 
         private void Awake()
         {
-            if (poseReceiver == null) poseReceiver = FindObjectOfType<UDPPoseReceiver>();
-            if (flightController == null) flightController = FindObjectOfType<DragonFlightController>();
+            if (poseReceiver == null) poseReceiver = FindFirstObjectByType<UDPPoseReceiver>();
+            if (flightController == null) flightController = FindFirstObjectByType<DragonFlightController>();
 
             _videoTexture = new Texture2D(256, 144, TextureFormat.RGB24, false);
 
@@ -217,6 +217,7 @@ namespace DragonWingAR.UI
 
         /// <summary>
         /// Menggambar avatar kerangka visual interaktif saat stream video belum terhubung.
+        /// Mendukung sendi siku (elbow) dan visualisasi gestur dinamis Minecraft Elytra.
         /// </summary>
         private void DrawSkeletonWireframe(Rect area)
         {
@@ -240,30 +241,58 @@ namespace DragonWingAR.UI
 
                 Vector2 ls = toAreaPx(poseReceiver.LeftShoulder);
                 Vector2 rs = toAreaPx(poseReceiver.RightShoulder);
+                Vector2 le = toAreaPx(poseReceiver.LeftElbow);
+                Vector2 re = toAreaPx(poseReceiver.RightElbow);
                 Vector2 lw = toAreaPx(poseReceiver.LeftWrist);
                 Vector2 rw = toAreaPx(poseReceiver.RightWrist);
                 Vector2 lh = toAreaPx(poseReceiver.LeftHip);
                 Vector2 rh = toAreaPx(poseReceiver.RightHip);
 
-                // Garis tulang
+                // Garis tulang kerangka (termasuk lengan bersiku)
                 Color boneCol = new Color(0f, 1f, 0.8f, 0.9f);
                 DrawLine(ls, rs, 2, boneCol);
-                DrawLine(ls, lw, 2, boneCol);
-                DrawLine(rs, rw, 2, boneCol);
+                DrawLine(ls, le, 2, boneCol);
+                DrawLine(le, lw, 2, boneCol);
+                DrawLine(rs, re, 2, boneCol);
+                DrawLine(re, rw, 2, boneCol);
                 DrawLine(ls, lh, 2, boneCol);
                 DrawLine(rs, rh, 2, boneCol);
                 DrawLine(lh, rh, 2, boneCol);
 
-                // Sendi tangan
-                Color handCol = poseReceiver.IsYPose ? Color.green : (poseReceiver.IsAPose ? new Color(1f, 0.55f, 0f) : Color.cyan);
+                // Sendi siku
+                DrawCircle(le, 4, new Color(1f, 0.7f, 0.1f, 0.9f));
+                DrawCircle(re, 4, new Color(1f, 0.7f, 0.1f, 0.9f));
+
+                // Sendi tangan & warna status
+                Color handCol;
+                string poseLabel;
+                if (poseReceiver.IsTuckDive)
+                {
+                    handCol = new Color(1f, 0.3f, 0f);
+                    poseLabel = "● DIVE TERJUN (TUCK DIVE ↓↓)";
+                }
+                else if (poseReceiver.IsFlapping)
+                {
+                    handCol = new Color(0.1f, 1f, 0.4f);
+                    poseLabel = "● KEPAK SAYAP (FLY UP + SPEED UP)";
+                }
+                else if (poseReceiver.IsYPose)
+                {
+                    handCol = new Color(0f, 1f, 0.9f);
+                    poseLabel = "● ARAH ATAS (CLIMB SOARING ↑)";
+                }
+                else
+                {
+                    handCol = new Color(1f, 0.9f, 0.2f);
+                    poseLabel = "● POSE T (ELYTRA GLIDE ~ -5°)";
+                }
+
                 DrawCircle(lw, 6, handCol);
                 DrawCircle(rw, 6, handCol);
 
-                // Indikator Pose Alfabet Y - T - A
-                string poseLetter = poseReceiver.IsYPose ? "● POSE Y (NAIK ↑)" : (poseReceiver.IsAPose ? "● POSE A (TURUN ↓)" : "● POSE T (LURUS)");
                 GUI.color = handCol;
                 GUIStyle pStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperCenter, fontStyle = FontStyle.Bold, fontSize = 11 };
-                GUI.Label(new Rect(area.x, area.y + 4, area.width, 20), poseLetter, pStyle);
+                GUI.Label(new Rect(area.x, area.y + 4, area.width, 20), poseLabel, pStyle);
 
                 // Indikator semburan air
                 if (poseReceiver.IsWaterBreathing)
@@ -275,7 +304,7 @@ namespace DragonWingAR.UI
 
             GUI.color = new Color(0.7f, 0.7f, 0.7f, 0.8f);
             GUIStyle centerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
-            GUI.Label(new Rect(area.x, area.yMax - 20, area.width, 20), "Y: Naik | T: Lurus | A: Turun", centerStyle);
+            GUI.Label(new Rect(area.x, area.yMax - 20, area.width, 20), "Kepak: FlyUp | T-Pose: Glide | Dive: Terjun", centerStyle);
         }
 
         /// <summary>
@@ -283,55 +312,62 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawFlightHUD()
         {
-            Rect hudRect = new Rect(20, 20, 320, 175);
+            Rect hudRect = new Rect(20, 20, 330, 185);
             GUI.color = Color.white;
             GUI.DrawTexture(hudRect, _boxBgTexture);
             DrawOutline(hudRect, 1, new Color(0.2f, 0.8f, 1f, 0.6f));
 
-            float speed = (flightController != null) ? flightController.CurrentSpeed : 12f;
-            float altitude = (flightController != null) ? flightController.transform.position.y : 15f;
+            float speed = (flightController != null) ? flightController.CurrentSpeed : 14f;
+            float altitude = (flightController != null) ? flightController.transform.position.y : 22f;
+            float pitch = (flightController != null) ? flightController.CurrentPitch : -5f;
             bool isHovering = (flightController != null) && flightController.IsHovering;
             float turnInput = (poseReceiver != null) ? poseReceiver.TurnInput : 0f;
-            float pitchInput = (poseReceiver != null) ? poseReceiver.PitchInput : 0f;
 
             GUIStyle titleStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, fontSize = 13 };
             GUI.color = new Color(0f, 1f, 0.9f);
-            GUI.Label(new Rect(32, 26, 290, 22), "AR DRAGON SKY GUARDIAN", titleStyle);
+            GUI.Label(new Rect(32, 26, 300, 22), "AR DRAGON SKY GUARDIAN", titleStyle);
 
             GUI.color = isHovering ? Color.yellow : Color.white;
-            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "TERBANG JELAJAH (3D Navigasi)";
-            GUI.Label(new Rect(32, 48, 290, 20), $"Status Mode : {flightMode}");
+            string flightMode = isHovering ? "AUTO-HOVER (Area Desa)" : "MINECRAFT ELYTRA 3D FLIGHT";
+            GUI.Label(new Rect(32, 48, 300, 20), $"Status Mode : {flightMode}");
 
-            GUI.color = Color.white;
-            GUI.Label(new Rect(32, 68, 290, 20), $"Kecepatan  : {speed:F1} m/s  |  Ketinggian: {altitude:F1} m");
+            // Kecepatan & Ketinggian
+            string speedTag = (speed > 20f) ? " [HIGH SPEED DIVE]" : ((speed > 16f) ? " [THRUST BOOST]" : "");
+            GUI.color = (speed > 20f) ? new Color(1f, 0.4f, 0f) : Color.white;
+            GUI.Label(new Rect(32, 68, 300, 20), $"Kecepatan  : {speed:F1} m/s{speedTag} | Alt: {altitude:F1} m");
 
-            // Status Manuver Vertikal Alfabet: Y = NAIK, T = LURUS, A = TURUN
+            // Status Manuver Dinamis (Elytra Physics)
             string vertStatus;
             Color vertCol;
-            if (poseReceiver != null && poseReceiver.IsYPose)
+            if (poseReceiver != null && poseReceiver.IsTuckDive)
             {
-                vertStatus = $"POSE Y: NAIK ↑ (+{pitchInput * 100:F0}%)";
+                vertStatus = $"TUCK DIVE: TERJUN CEPAT (Pitch: {pitch:F0}°)";
+                vertCol = new Color(1f, 0.35f, 0.05f);
+            }
+            else if (poseReceiver != null && poseReceiver.IsFlapping)
+            {
+                vertStatus = $"KEPAK SAYAP: SPEED UP + FLY UP (Pitch: {pitch:F0}°)";
                 vertCol = new Color(0.1f, 1f, 0.4f);
             }
-            else if (poseReceiver != null && poseReceiver.IsAPose)
+            else if (poseReceiver != null && poseReceiver.IsYPose)
             {
-                vertStatus = $"POSE A: TURUN ↓ ({pitchInput * 100:F0}%)";
-                vertCol = new Color(1f, 0.55f, 0.1f);
+                vertStatus = $"ARAH ATAS: CLIMB SOARING ↑ (Pitch: {pitch:F0}°)";
+                vertCol = new Color(0f, 1f, 0.9f);
             }
             else
             {
-                vertStatus = "POSE T: LURUS MENDATAR";
-                vertCol = new Color(0.2f, 0.9f, 1f);
+                vertStatus = $"POSE T: ELYTRA GLIDE (Pitch: {pitch:F0}°)";
+                vertCol = new Color(1f, 0.9f, 0.2f);
             }
             GUI.color = vertCol;
-            GUI.Label(new Rect(32, 88, 290, 20), $"Vertikal   : {vertStatus}");
+            GUI.Label(new Rect(32, 88, 300, 20), $"Orientasi  : {vertStatus}");
 
             // Bar Kemudi Belok (-100% s/d +100%)
             string steerTxt = (Mathf.Abs(turnInput) < 0.08f) ? "Lurus (Deadzone)" : (turnInput < 0 ? $"Kiri ({Mathf.Abs(turnInput) * 100:F0}%)" : $"Kanan ({turnInput * 100:F0}%)");
             GUI.color = Color.white;
-            GUI.Label(new Rect(32, 108, 290, 20), $"Kemudi     : {steerTxt}");
+            GUI.Label(new Rect(32, 108, 300, 20), $"Kemudi     : {steerTxt}");
 
-            Rect barBg = new Rect(32, 130, 280, 10);
+            Rect barBg = new Rect(32, 130, 290, 10);
             GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
             GUI.DrawTexture(barBg, _barTexture);
 
@@ -348,12 +384,13 @@ namespace DragonWingAR.UI
             bool flap = poseReceiver != null && poseReceiver.IsFlapping;
             bool water = poseReceiver != null && poseReceiver.IsWaterBreathing;
             bool high = poseReceiver != null && poseReceiver.IsHandsHighUp;
+            bool dive = poseReceiver != null && poseReceiver.IsTuckDive;
 
-            string gestStr = $"Aksi: {(flap ? "[KEPAK]" : "")} {(water ? "[SEMBUR AIR]" : "")} {(high ? "[HUJAN EMBUN]" : "")}";
-            if (!flap && !water && !high) gestStr = "Aksi: Menjelajah";
+            string gestStr = $"Aksi: {(flap ? "[KEPAK]" : "")} {(dive ? "[DIVE]" : "")} {(water ? "[SEMBUR AIR]" : "")} {(high ? "[HUJAN EMBUN]" : "")}";
+            if (!flap && !dive && !water && !high) gestStr = "Aksi: Menjelajah Meluncur (Elytra)";
 
-            GUI.color = water ? Color.cyan : (flap ? Color.green : Color.yellow);
-            GUI.Label(new Rect(32, 146, 290, 20), gestStr);
+            GUI.color = water ? Color.cyan : (dive ? new Color(1f, 0.4f, 0f) : (flap ? Color.green : Color.yellow));
+            GUI.Label(new Rect(32, 148, 300, 20), gestStr);
         }
 
         /// <summary>
@@ -361,7 +398,7 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawControlsQuickGuide()
         {
-            float width = 680f;
+            float width = 740f;
             float height = 26f;
             float x = (Screen.width - width) * 0.5f;
             float y = Screen.height - height - 12f;
@@ -377,7 +414,7 @@ namespace DragonWingAR.UI
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 11
             };
-            GUI.Label(bgRect, "Pose Kamera: [Y] Tangan Diangkat (Naik ↑) | [T] Mendatar (Lurus) | [A] Tangan Ke Paha (Turun ↓) || Keyboard: W/Y=Naik | S/A=Turun | Panah=Belok", guideStyle);
+            GUI.Label(bgRect, "Elytra CV: Kepak Tangan=Fly Up+Speed Up | Pose T=Glide (-5°) | Pose Gambar=Tuck Dive (-45°) | Tilt=Belok || KB: Space=Flap | S=Dive | W/Y=Climb | A/D=Kemudi", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)
