@@ -1,11 +1,12 @@
 """
 test_send_dummy_udp.py
 Skrip pengujian transmisi data sintetis (dummy) ke Unity via UDP port 5052 (Pose) & 5053 (Video PIP).
-Mensimulasikan 4 mode mekanik Sky Peck:
+Mensimulasikan 5 mode mekanik Sky Peck (Phase 2):
 1. GLIDE (0-4s): Tangan merentang mendatar, jelajah stabil dengan sink rate alami
-2. FLAP TO CLIMB (4-8s): Mengepakkan tangan naik-turun -> Daya angkat vertikal halus mendaki ke atas
-3. TUCK TO DIVE (8-12s): Pose foto pengguna (tangan di dada, siku ke bawah) -> Menukik curam kecepatan tinggi
-4. SWOOP CLIMB & LEAN (12-16s): Membuka sayap setelah dive -> Mengonversi laju kencang menjadi luncuran melambung naik (Swoop) + Lean to Bank Turn
+2. FLAP TO CLIMB (4-8s): Mengepakkan tangan naik-turun -> Daya angkat vertikal mendaki
+3. TUCK TO DIVE (8-12s): Tangan di dada, siku ke bawah -> Menukik curam kecepatan tinggi
+4. PROPELLER DASH (12-16s): Rotasi orbital pergelangan tangan kontinu -> Dorongan dash maju
+5. SWOOP CLIMB & LEAN (16-20s): Buka sayap setelah dive -> Melambung naik (Swoop) + Lean to Bank Turn
 """
 
 import time
@@ -15,13 +16,13 @@ import numpy as np
 from udp_sender import PoseUDPSender, VideoUDPSender
 
 def main():
-    print("=" * 65)
-    print("🚀 PENGIRIM PAKET UDP SINTETIS (SKY PECK FLIGHT MECHANICS)")
-    print("   - Target Pose UDP : 127.0.0.1:5052 (CSV 21 Float)")
+    print("=" * 70)
+    print("🚀 PENGIRIM PAKET UDP SINTETIS (PHASE 2 GESTURE STATE MACHINE)")
+    print("   - Target Pose UDP : 127.0.0.1:5052 (CSV 32 Float)")
     print("   - Target Video PIP: 127.0.0.1:5053 (JPEG Frame)")
-    print("   - Siklus: Glide -> Flap to Climb -> Tuck Dive -> Swoop Climb & Lean")
+    print("   - Siklus: Glide -> Flap -> Tuck Dive -> Propeller Dash -> Lean Turn")
     print("   - Tekan Ctrl+C untuk berhenti")
-    print("=" * 65)
+    print("=" * 70)
 
     sender = PoseUDPSender(ip="127.0.0.1", port=5052)
     video_sender = VideoUDPSender(ip="127.0.0.1", port=5053, width=320, height=180)
@@ -32,7 +33,7 @@ def main():
     try:
         while True:
             t += 0.05
-            cycle = t % 16.0  # 4 fase per 4 detik
+            cycle = t % 20.0  # 5 fase x 4 detik
 
             # Bahu & Pinggul dasar
             ls = [0.40, 0.38]
@@ -40,11 +41,15 @@ def main():
             lh = [0.44, 0.72]
             rh = [0.56, 0.72]
 
-            tilt_wave = math.cos(t * 1.5) * 0.08  # Kemiringan belok kiri-kanan
+            tilt_wave = math.cos(t * 1.5) * 0.08
             is_dive = 0.0
             is_flap = 0.0
+            is_dash = 0.0
             flap_freq = 0.0
             flap_power = 0.0
+            dash_power = 0.0
+            steering_input = 0.0
+            active_state_id = 0.0  # 0=Glide, 1=Flap, 2=Dive, 3=Dash
 
             if cycle < 4.0:
                 # 1. GLIDE (Sayap terbentang mendatar, meluncur stabil)
@@ -54,37 +59,50 @@ def main():
                 re = (0.72, 0.40)
                 lw = (0.16, 0.41)
                 rw = (0.84, 0.41)
+                active_state_id = 0.0
 
             elif cycle < 8.0:
-                # 2. FLAP TO CLIMB (Mengepakkan tangan: daya angkat vertikal naik tanpa pitch nodding)
+                # 2. FLAP TO CLIMB (Mengepakkan tangan: daya angkat vertikal naik)
                 mode_name = "SKY PECK: FLAP TO CLIMB ↑ (Mendaki Vertikal)"
                 mode_color = (0, 255, 120)
-                flap_osc = math.sin(t * 12.0) * 0.20  # Frekuensi kepakan ~2 Hz
+                flap_osc = math.sin(t * 12.0) * 0.20
                 le = (0.30, 0.42 + flap_osc * 0.5)
                 re = (0.70, 0.42 + flap_osc * 0.5)
                 lw = (0.20, 0.40 + flap_osc)
                 rw = (0.80, 0.40 + flap_osc)
                 is_flap = 1.0
-                flap_freq = 2.0
+                flap_freq = 2.2
                 flap_power = 0.88
+                active_state_id = 1.0
 
             elif cycle < 12.0:
-                # 3. TUCK TO DIVE (Foto Pengguna: tangan mengepal rapat di dada, siku ke bawah)
+                # 3. TUCK TO DIVE (Tangan mengepal rapat di dada, siku ke bawah)
                 mode_name = "SKY PECK: TUCK DIVE ↓↓ (Menukik Cepat)"
                 mode_color = (0, 100, 255)
-                # Siku mengarah ke bawah di bawah bahu dan pergelangan tangan
                 le = (0.34, 0.56)
                 re = (0.66, 0.56)
-                # Tangan mengepal di dada atas
                 lw = (0.43, 0.43)
                 rw = (0.57, 0.43)
                 is_dive = 1.0
+                active_state_id = 2.0
+
+            elif cycle < 16.0:
+                # 4. PROPELLER DASH (Rotasi orbital tangan berputar kontinu)
+                mode_name = "SKY PECK: PROPELLER DASH ⚡ (Dorongan Cepat)"
+                mode_color = (255, 180, 0)
+                rot_angle = t * 15.0  # ~2.4 rotasi per detik
+                radius = 0.12
+                le = (0.30, 0.42)
+                re = (0.70, 0.42)
+                lw = (0.30 + math.cos(rot_angle) * radius, 0.42 + math.sin(rot_angle) * radius)
+                rw = (0.70 + math.cos(rot_angle + math.pi) * radius, 0.42 + math.sin(rot_angle + math.pi) * radius)
+                is_dash = 1.0
+                dash_power = 0.95
+                active_state_id = 3.0
 
             else:
-                # 4. SWOOP CLIMB OUT OF DIVE & LEAN TO TURN
-                # Membuka sayap lebar setelah dive -> naga melambung naik (Swoop Climb) sambil condong berbelok
+                # 5. SWOOP CLIMB OUT OF DIVE & LEAN TO TURN
                 lean_offset = 0.06 * math.sin(t * 2.0)
-                # Condongkan torso
                 ls[0] += lean_offset
                 rs[0] += lean_offset
                 mode_name = "SKY PECK: SWOOP CLIMB ↑ + LEAN TURN"
@@ -93,10 +111,12 @@ def main():
                 re = (0.72 + lean_offset, 0.38 - tilt_wave * 0.5)
                 lw = (0.16 + lean_offset, 0.39 + tilt_wave)
                 rw = (0.84 + lean_offset, 0.39 - tilt_wave)
+                steering_input = float(np.clip(lean_offset * 12.0, -1.0, 1.0))
+                active_state_id = 0.0
 
             mouth = 1.0 if (math.sin(t * 0.8) > 0.75) else 0.0
 
-            # 1. Kirim pose CSV ke Unity (21-24 float)
+            # 1. Kirim pose CSV ke Unity (32 float)
             sender.send_pose(
                 (ls[0], ls[1]), (rs[0], rs[1]),
                 lw, rw,
@@ -107,8 +127,18 @@ def main():
                 is_flap=is_flap,
                 flap_freq=flap_freq,
                 flap_power=flap_power,
-                body_pitch=(1.0 if cycle >= 12.0 else (-1.0 if (8.0 <= cycle < 12.0) else 0.0)),
-                nose=(0.50 + (ls[0] - 0.40), 0.24)
+                body_pitch=(1.0 if (cycle >= 16.0 or (4.0 <= cycle < 8.0)) else (-1.0 if (8.0 <= cycle < 12.0) else 0.0)),
+                nose=(0.50 + (ls[0] - 0.40), 0.24),
+                wingspan_ratio=math.hypot(rw[0]-lw[0], rw[1]-lw[1]) / 0.20,
+                flap_height=(ls[1]-lw[1]) / 0.32,
+                lean_angle_deg=steering_input * 18.0,
+                tracking_state=1.0,
+                is_dash=is_dash,
+                dash_power=dash_power,
+                steering_input=steering_input,
+                active_state_id=active_state_id,
+                calib_state_id=5.0,
+                calib_progress=1.0
             )
 
             # 2. Gambar frame sintetis untuk video PIP port 5053
@@ -135,26 +165,16 @@ def main():
             cv2.line(canvas, p_rs, p_rh, bone_col, 2)
             cv2.line(canvas, p_lh, p_rh, bone_col, 2)
 
-            hand_col = (0, 100, 255) if is_dive > 0.5 else ((0, 255, 0) if is_flap > 0.5 else (0, 255, 240))
+            hand_col = (255, 180, 0) if is_dash > 0.5 else ((0, 100, 255) if is_dive > 0.5 else ((0, 255, 0) if is_flap > 0.5 else (0, 255, 240)))
             cv2.circle(canvas, p_lw, 7, hand_col, -1)
             cv2.circle(canvas, p_rw, 7, hand_col, -1)
-            cv2.circle(canvas, p_le, 5, (255, 180, 0), -1)
-            cv2.circle(canvas, p_re, 5, (255, 180, 0), -1)
 
-            # Kepala
-            head_x, head_y = int(vw * 0.5), int(vh * 0.24)
-            cv2.circle(canvas, (head_x, head_y), 13, (255, 230, 100), 2)
-            if mouth > 0.5:
-                cv2.circle(canvas, (head_x, head_y + 4), 5, (255, 200, 0), -1)
-
-            # Label overlay
-            cv2.putText(canvas, mode_name, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.42, mode_color, 1)
-
+            cv2.putText(canvas, mode_name, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.40, mode_color, 1, cv2.LINE_AA)
             video_sender.send_frame(canvas)
             time.sleep(0.04)
 
     except KeyboardInterrupt:
-        print("\n[*] Synthetic sender dihentikan.")
+        print("\n[*] Dummy Sender dihentikan.")
     finally:
         sender.close()
         video_sender.close()

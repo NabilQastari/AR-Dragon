@@ -1,15 +1,17 @@
 """
 active_cv_sender.py
-Modul Pengirim Pose CV Resmi (Locked Model: YOLOv8n-pose CUDA GPU).
-Dirancang khusus untuk dijalankan berdampingan dengan Unity AR Dragon Sky Guardian.
-- Model: YOLOv8n-pose (Tensor GPU ~12 ms)
-- Multi-person: Primary Player Auto-Lock (Prioritas Pemain Utama)
-- Biometrik: Dynamic Anatomical Arm Clamping & Adaptive One-Euro Filter
-- Sayap: WingFlapDetector State Machine (Anti-Flicker & Flap Power)
-- Kemudi: Smooth Deadzone Tilt (-100% s/d +100%)
-- Mulut: Zero-Delay Head-Cropped Water Breath Tracker (~5 ms)
-- Protokol: UDP 127.0.0.1:5052 (13 Float CSV)
-- Mode: GUI Preview interaktif atau Headless (--headless)
+Modul Pengirim Computer Vision Resmi - AR Dragon Sky Guardian (Phase 2 Upgrade).
+- Model: YOLOv8n-pose (Tensor Cores CUDA GPU ~18 ms / 54 FPS)
+- Stabilizer: RobustKeypointTracker dengan Adaptive One-Euro Filter & Kinematic Velocity Gating
+- Normalisasi: BiometricNormalizer (Scale-, Distance-, & Position-Invariant)
+- State Machine: TrackingState (TRACKED, DEGRADED, LOST, RECOVERING)
+- Gesture Engine: GestureStateMachine (Phase 2):
+  * Flap to Climb (Upstroke/Downstroke segmentation, frequency, amplitude-weighted power)
+  * Continuous Lean (Torso spine & arm tilt with deadzone)
+  * Tuck Dive (Compactness & downward elbow alignment with hold duration check)
+  * Propeller Dash (Monotonic angular displacement & orbital consistency)
+- Visualisasi: High-Detail CV Debug Overlay dengan Heatmap Confidence, Vektor Biometrik, & Gesture State
+- Protokol: UDP 127.0.0.1:5052 (32-Float Telemetri) & UDP 127.0.0.1:5053 (PIP Video)
 """
 
 import os
@@ -18,6 +20,8 @@ import time
 import math
 import argparse
 import tempfile
+from typing import Dict, Tuple, Optional, List, Any
+
 import cv2
 import numpy as np
 import torch
@@ -27,11 +31,52 @@ from ultralytics import YOLO
 
 from udp_sender import PoseUDPSender, VideoUDPSender
 from camera_stream import ThreadedCamera
-from pose_stabilizer import PoseStabilizer, WingFlapDetector, compute_smooth_tilt
+from pose_stabilizer import (
+    RobustKeypointTracker,
+    BiometricNormalizer,
+    TrackingState
+)
+from motion_recognizer import (
+    GestureStateMachine,
+    GestureState,
+    FlapStrokePhase
+)
 from mouth_tracker import MouthTracker
+from player_calibrator import PlayerCalibrator, CalibrationState
+
+
+# COCO 17 Keypoint Indices
+IDX_NOSE = 0
+IDX_LEFT_EYE, IDX_RIGHT_EYE = 1, 2
+IDX_LEFT_EAR, IDX_RIGHT_EAR = 3, 4
+IDX_LEFT_SHOULDER, IDX_RIGHT_SHOULDER = 5, 6
+IDX_LEFT_ELBOW, IDX_RIGHT_ELBOW = 7, 8
+IDX_LEFT_WRIST, IDX_RIGHT_WRIST = 9, 10
+IDX_LEFT_HIP, IDX_RIGHT_HIP = 11, 12
+IDX_LEFT_KNEE, IDX_RIGHT_KNEE = 13, 14
+IDX_LEFT_ANKLE, IDX_RIGHT_ANKLE = 15, 16
+
+# Skeleton connection pairs for rendering
+SKELETON_CONNECTIONS = [
+    (IDX_LEFT_SHOULDER, IDX_RIGHT_SHOULDER),
+    (IDX_LEFT_SHOULDER, IDX_LEFT_ELBOW),
+    (IDX_LEFT_ELBOW, IDX_LEFT_WRIST),
+    (IDX_RIGHT_SHOULDER, IDX_RIGHT_ELBOW),
+    (IDX_RIGHT_ELBOW, IDX_RIGHT_WRIST),
+    (IDX_LEFT_SHOULDER, IDX_LEFT_HIP),
+    (IDX_RIGHT_SHOULDER, IDX_RIGHT_HIP),
+    (IDX_LEFT_HIP, IDX_RIGHT_HIP),
+    (IDX_LEFT_HIP, IDX_LEFT_KNEE),
+    (IDX_LEFT_KNEE, IDX_LEFT_ANKLE),
+    (IDX_RIGHT_HIP, IDX_RIGHT_KNEE),
+    (IDX_RIGHT_KNEE, IDX_RIGHT_ANKLE),
+    (IDX_NOSE, IDX_LEFT_SHOULDER),
+    (IDX_NOSE, IDX_RIGHT_SHOULDER)
+]
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Active CV Sender for Unity AR Dragon Sky Guardian")
+    parser = argparse.ArgumentParser(description="Active CV Sender for AR Dragon Sky Guardian (Phase 2)")
     parser.add_argument("--ip", type=str, default="127.0.0.1", help="Target UDP IP (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5052, help="Target UDP Pose Port (default: 5052)")
     parser.add_argument("--video-port", type=int, default=5053, help="Target UDP Video PIP Port (default: 5053)")
@@ -40,14 +85,195 @@ def parse_args():
     parser.add_argument("--width", type=int, default=1280, help="Capture Width (default: 1280)")
     parser.add_argument("--height", type=int, default=720, help="Capture Height (default: 720)")
     parser.add_argument("--headless", action="store_true", help="Run in headless background mode (no GUI window)")
+    parser.add_argument("--conf", type=float, default=0.25, help="YOLO Pose Confidence Threshold (default: 0.25)")
     return parser.parse_args()
+
+
+def draw_debug_overlay(
+    frame: np.ndarray,
+    all_kpts: Optional[np.ndarray],
+    tracker: RobustKeypointTracker,
+    biometrics: Optional[Dict],
+    fps: float,
+    latency_ms: float,
+    tracking_state: TrackingState,
+    gesture_result: Dict[str, Any],
+    calib_state: CalibrationState = CalibrationState.IDLE,
+    calib_progress: float = 0.0,
+    calib_text: str = ""
+):
+    """
+    CV Debug Visualization:
+    Renders camera feed, skeleton with confidence color-coding, biometric lines,
+    gesture state badges, and developer telemetry HUD.
+    """
+    h, w, _ = frame.shape
+
+    def get_conf_color(c: float) -> Tuple[int, int, int]:
+        if c >= 0.55:
+            return (0, 255, 100)      # High: Vibrant Green
+        elif c >= 0.25:
+            return (0, 200, 255)      # Medium: Amber/Orange
+        else:
+            return (0, 50, 220)       # Low/Occluded: Red
+
+    # 1. Render Skeleton Bones
+    if all_kpts is not None and len(all_kpts) >= 17:
+        for p1_idx, p2_idx in SKELETON_CONNECTIONS:
+            x1, y1, c1 = float(all_kpts[p1_idx][0]), float(all_kpts[p1_idx][1]), float(all_kpts[p1_idx][2])
+            x2, y2, c2 = float(all_kpts[p2_idx][0]), float(all_kpts[p2_idx][1]), float(all_kpts[p2_idx][2])
+
+            if c1 >= 0.20 and c2 >= 0.20:
+                pt1 = (int(x1), int(y1))
+                pt2 = (int(x2), int(y2))
+                bone_conf = min(c1, c2)
+                color = get_conf_color(bone_conf)
+                thickness = 3 if bone_conf >= 0.50 else 2
+                cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
+
+        # Render Keypoint Circles
+        for idx in range(17):
+            x, y, c = float(all_kpts[idx][0]), float(all_kpts[idx][1]), float(all_kpts[idx][2])
+            pt = (int(x), int(y))
+            color = get_conf_color(c)
+            radius = 5 if c >= 0.50 else 3
+            cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
+            cv2.circle(frame, pt, radius + 2, (30, 30, 30), 1, cv2.LINE_AA)
+
+    # 2. Render Biometric Vector Overlays
+    if biometrics is not None:
+        ms = (int(biometrics["mid_shoulder"][0] * w), int(biometrics["mid_shoulder"][1] * h))
+        mh = (int(biometrics["mid_hip"][0] * w), int(biometrics["mid_hip"][1] * h))
+
+        # Torso spine vector (Magenta)
+        cv2.line(frame, mh, ms, (255, 0, 255), 3, cv2.LINE_AA)
+        cv2.circle(frame, ms, 6, (255, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(frame, mh, 6, (255, 0, 255), -1, cv2.LINE_AA)
+
+        # True Vertical Reference line from MidHip (Dotted white)
+        vert_top = (mh[0], max(10, mh[1] - int(biometrics["torso_length"] * h * 1.1)))
+        cv2.line(frame, mh, vert_top, (200, 200, 200), 1, cv2.LINE_4)
+
+        # Shoulder width line (Cyan)
+        if "ls" in tracker.last_valid_positions and "rs" in tracker.last_valid_positions:
+            ls_pt = (int(tracker.last_valid_positions["ls"][0] * w), int(tracker.last_valid_positions["rs"][1] * h))
+            rs_pt = (int(tracker.last_valid_positions["rs"][0] * w), int(tracker.last_valid_positions["rs"][1] * h))
+            cv2.line(frame, ls_pt, rs_pt, (255, 255, 0), 2, cv2.LINE_AA)
+
+    # 3. Developer Telemetry HUD Panel (Left Top)
+    hud_w, hud_h = 380, 260
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (15, 15), (15 + hud_w, 15 + hud_h), (18, 18, 22), -1)
+    cv2.addWeighted(overlay, 0.82, frame, 0.18, 0, frame)
+    cv2.rectangle(frame, (15, 15), (15 + hud_w, 15 + hud_h), (60, 60, 75), 1)
+
+    # State Badge Colors
+    state_colors = {
+        TrackingState.TRACKED: (0, 255, 100),
+        TrackingState.DEGRADED: (0, 200, 255),
+        TrackingState.LOST: (0, 50, 230),
+        TrackingState.RECOVERING: (255, 220, 0)
+    }
+    st_col = state_colors.get(tracking_state, (200, 200, 200))
+
+    cv2.putText(frame, "AR DRAGON CV TELEMETRY v6.5 (PHASE 2)", (25, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"TRACKING: {tracking_state.value}", (25, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.50, st_col, 2, cv2.LINE_AA)
+    cv2.putText(frame, f"FPS: {fps:.1f} | Latency: {latency_ms:.1f} ms (CUDA)", (25, 80),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 220), 1, cv2.LINE_AA)
+
+    if biometrics is not None:
+        sw = biometrics["shoulder_width"]
+        tl = biometrics["torso_length"]
+        wr = biometrics["wingspan_ratio"]
+        lean_deg = biometrics["lean_angle_deg"]
+        steer = gesture_result.get("steering_input", 0.0)
+
+        cv2.putText(frame, f"Sw: {sw:.3f} | Tl: {tl:.3f} | Wingspan Ratio: {wr:.2f}", (25, 102),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 220, 220), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Spine Lean: {lean_deg:+.1f} deg | Steering: {steer:+.2f}", (25, 122),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 200) if abs(lean_deg) > 4.0 else (180, 180, 180), 1, cv2.LINE_AA)
+
+        # Steering bar graphic
+        bar_cx = 200
+        bar_y = 138
+        cv2.rectangle(frame, (bar_cx - 80, bar_y - 4), (bar_cx + 80, bar_y + 4), (50, 50, 60), -1)
+        steer_px = int(steer * 75)
+        bar_col = (0, 255, 200) if steer != 0 else (120, 120, 120)
+        cv2.rectangle(frame, (bar_cx, bar_y - 4), (bar_cx + steer_px, bar_y + 4), bar_col, -1)
+        cv2.circle(frame, (bar_cx, bar_y), 3, (255, 255, 255), -1)
+
+        # Active Gesture State
+        active_st = gesture_result.get("active_state", "GLIDE")
+        if active_st == GestureState.PROPELLER_DASH.value:
+            mode_lbl = f"GESTURE: PROPELLER DASH (+{gesture_result.get('dash_power',0)*100:.0f}%)"
+            mode_col = (255, 180, 0)
+        elif active_st == GestureState.TUCK_DIVE.value:
+            mode_lbl = f"GESTURE: TUCK DIVE (+{gesture_result.get('dive_power',0)*100:.0f}%)"
+            mode_col = (0, 100, 255)
+        elif active_st == GestureState.HOVER.value:
+            mode_lbl = f"GESTURE: HOVER (Lengan Rapat + Forearm Flap: {gesture_result.get('hover_power',0)*100:.0f}%)"
+            mode_col = (255, 100, 255)
+        elif active_st == GestureState.GENTLE_DESCENT.value:
+            mode_lbl = f"GESTURE: GENTLE DESCENT (Tucked T-Pose: {gesture_result.get('gentle_stability',0)*100:.0f}%)"
+            mode_col = (0, 220, 220)
+        elif active_st == GestureState.FLY_UP.value:
+            mode_lbl = f"GESTURE: FLY UP (Dada Terangkat + Flap: {gesture_result.get('fly_up_power',0)*100:.0f}%)"
+            mode_col = (0, 255, 120)
+        elif active_st == GestureState.FLAPPING.value:
+            mode_lbl = f"GESTURE: FLAP ({gesture_result.get('flap_frequency',0):.1f}Hz, {gesture_result.get('flap_power',0)*100:.0f}%)"
+            mode_col = (0, 255, 100)
+        else:
+            mode_lbl = "GESTURE: GLIDE (Jelajah Stabil)"
+            mode_col = (255, 220, 60)
+
+        cv2.putText(frame, mode_lbl, (25, 172), cv2.FONT_HERSHEY_SIMPLEX, 0.48, mode_col, 2, cv2.LINE_AA)
+
+        # Stroke phase indicator
+        stroke = gesture_result.get("stroke_phase", "NEUTRAL")
+        cv2.putText(frame, f"Stroke Phase: {stroke}", (25, 196), cv2.FONT_HERSHEY_SIMPLEX, 0.40,
+                    (0, 255, 200) if stroke != "NEUTRAL" else (140, 140, 140), 1, cv2.LINE_AA)
+
+        # Confidences row
+        conf_str = f"Conf: LS={tracker.joint_confidences.get('ls',0):.2f} RS={tracker.joint_confidences.get('rs',0):.2f} LW={tracker.joint_confidences.get('lw',0):.2f} RW={tracker.joint_confidences.get('rw',0):.2f}"
+        cv2.putText(frame, conf_str, (25, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (160, 160, 160), 1, cv2.LINE_AA)
+
+        # Section 7 Biometric & Kinematic Telemetry Overlay
+        chest_e = biometrics.get("chest_elevation", 1.55) if biometrics else 1.55
+        u_prox = biometrics.get("upper_arm_proximity", 0.50) if biometrics else 0.50
+        e_ang = biometrics.get("avg_elbow_angle", 90.0) if biometrics else 90.0
+        f_spd = biometrics.get("forearm_lateral_spread", 1.0) if biometrics else 1.0
+        telem_str = f"Chest={chest_e:.2f} | Prox={u_prox:.2f} | Elbow={e_ang:.0f}deg | Spread={f_spd:.2f}"
+        cv2.putText(frame, telem_str, (25, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (200, 220, 255), 1, cv2.LINE_AA)
+
+        cv2.putText(frame, f"Active State ID: {active_st}", (25, 258), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (180, 180, 180), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Kalibrasi: {calib_text} [Tekan 'C' untuk Kalibrasi]", (25, 276), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 220, 255) if calib_state != CalibrationState.IDLE else (160, 160, 160), 1, cv2.LINE_AA)
+    else:
+        cv2.putText(frame, "MENUNGGU TARGET PEMAIN...", (25, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 160, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, "Posisikan diri menghadap kamera.", (25, 145), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (180, 180, 180), 1, cv2.LINE_AA)
+
+    # 4. Calibration Center Banner (Jika sedang proses kalibrasi)
+    if calib_state not in (CalibrationState.IDLE, CalibrationState.COMPLETE):
+        bw, bh = 540, 52
+        bx = (w - bw) // 2
+        by = 22
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (bx, by), (bx + bw, by + bh), (15, 20, 35), -1)
+        cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
+        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0, 220, 255), 2)
+        cv2.putText(frame, calib_text, (bx + 16, by + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 2, cv2.LINE_AA)
+        
+        # Progress bar
+        cv2.rectangle(frame, (bx + 16, by + 34), (bx + bw - 16, by + 42), (40, 45, 55), -1)
+        pw = int((bw - 32) * max(0.0, min(1.0, calib_progress)))
+        cv2.rectangle(frame, (bx + 16, by + 34), (bx + 16 + pw, by + 42), (0, 255, 120), -1)
+
 
 def main():
     args = parse_args()
 
     model_path = os.path.join(os.path.dirname(__file__), "yolov8n-pose.pt")
     if not os.path.exists(model_path):
-        print(f"[!] File model tidak ditemukan: {model_path}")
+        print(f"[!] File model YOLO tidak ditemukan: {model_path}")
         return
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -56,7 +282,15 @@ def main():
     if device.startswith("cuda"):
         pose_model.to(device)
 
-    print("[*] Menginisialisasi Mouth Tracker (Zero-Delay Head-Crop)...")
+    # Warmup inference
+    warmup_dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for _ in range(5):
+        _ = pose_model(warmup_dummy, device=device, imgsz=640, verbose=False, conf=args.conf)
+    if device.startswith("cuda"):
+        torch.cuda.synchronize()
+    print("[OK] Warmup YOLOv8n-pose selesai. Tensor Cores aktif.")
+
+    print("[*] Menginisialisasi Mouth Tracker (Head-Crop)...")
     mouth_tracker = MouthTracker()
 
     print(f"[*] Membuka koneksi UDP Pose ke {args.ip}:{args.port}...")
@@ -67,30 +301,30 @@ def main():
         print(f"[*] Membuka streaming video PIP UDP ke {args.ip}:{args.video_port}...")
         video_sender = VideoUDPSender(ip=args.ip, port=args.video_port)
 
-    stabilizer = PoseStabilizer()
-    flap_detector = WingFlapDetector(hysteresis=0.035)
+    # Initialize Phase 1, Phase 2, & Phase 4 Engines
+    tracker = RobustKeypointTracker()
+    normalizer = BiometricNormalizer()
+    calibrator = PlayerCalibrator()
+    gesture_sm = GestureStateMachine(adaptive_engine=calibrator.engine)
 
     print(f"[*] Menyalakan kamera (MJPG 30 FPS, Cam ID {args.cam})...")
     cam = ThreadedCamera(src=args.cam, width=args.width, height=args.height, fps=30)
-    time.sleep(0.5)
+    time.sleep(0.4)
 
-    print("=" * 70)
-    print("🐉 ACTIVE CV SENDER - AR DRAGON SKY GUARDIAN (YOLOv8n-pose)")
-    print(f"   - Target UDP Pose : {args.ip}:{args.port}")
+    print("=" * 75)
+    print("🐉 ACTIVE CV SENDER (PHASE 4 UPGRADE) - AR DRAGON SKY GUARDIAN")
+    print(f"   - Model           : YOLOv8n-pose (17 COCO Keypoints, CUDA GPU)")
+    print(f"   - Target UDP Pose : {args.ip}:{args.port} (34 Float CSV)")
     print(f"   - Target UDP Video: {args.ip}:{args.video_port} ({'AKTIF' if video_sender else 'NONAKTIF'})")
     print(f"   - Mode Eksekusi   : {'HEADLESS (Background)' if args.headless else 'INTERAKTIF GUI PREVIEW'}")
-    print(f"   - Akselerasi      : NVIDIA CUDA Tensor ({device})")
+    print(f"   - Gesture Engine  : GestureStateMachine (Glide, Flap, Tuck Dive, Propeller Dash)")
+    print(f"   - Calibrator      : PlayerCalibrator & AdaptiveThresholdEngine (Tekan 'C' untuk Kalibrasi)")
+    print(f"   - State Priority  : Propeller Dash > Tuck Dive > Flap > Glide")
     print("   - Tekan Ctrl+C (atau 'q'/ESC pada GUI) untuk menghentikan pengiriman")
-    print("=" * 70)
-
-    IDX_NOSE = 0
-    IDX_LS, IDX_RS = 5, 6
-    IDX_LE, IDX_RE = 7, 8
-    IDX_LW, IDX_RW = 9, 10
-    IDX_LH, IDX_RH = 11, 12
+    print("=" * 75)
 
     prev_time = time.time()
-    fps_history = []
+    fps_history: List[float] = []
     head_pos = None
 
     try:
@@ -104,22 +338,36 @@ def main():
             h, w, _ = frame.shape
             t_start = time.perf_counter()
 
-            # 1. Inferensi Pose YOLOv8n
-            results = pose_model(frame, device=device, imgsz=640, verbose=False, conf=0.25)
+            # 1. Inferensi Pose YOLOv8n-pose
+            results = pose_model(frame, device=device, imgsz=640, verbose=False, conf=args.conf)
+            if device.startswith("cuda"):
+                torch.cuda.synchronize()
+            t_infer = time.perf_counter()
+            latency_ms = (t_infer - t_start) * 1000.0
 
             pose_detected = False
-            flap_count = 0
-            flap_state_str = "TIDAK TERDETEKSI"
-            flap_freq = 0.0
-            flap_power = 0.0
-            norm_tilt = 0.0
-            raw_diff = 0.0
+            kpts_raw = None
+            confidences: Dict[str, float] = {}
+            biometrics = None
+            gesture_result: Dict[str, Any] = {
+                "active_state": "GLIDE",
+                "is_tuck_dive": False,
+                "is_flapping": False,
+                "is_propeller_dash": False,
+                "steering_input": 0.0,
+                "lean_label": "NEUTRAL",
+                "flap_frequency": 0.0,
+                "flap_power": 0.0,
+                "dive_power": 0.0,
+                "dash_power": 0.0,
+                "stroke_phase": "NEUTRAL"
+            }
 
             if results and len(results) > 0 and results[0].keypoints is not None:
                 kpts_data = results[0].keypoints.data
                 boxes = results[0].boxes
                 if kpts_data is not None and len(kpts_data) > 0:
-                    # Kunci target pemain utama dengan Bounding Box terbesar
+                    # Select primary player with largest bounding box
                     best_idx = 0
                     if boxes is not None and len(boxes) > 1:
                         max_area = 0.0
@@ -131,157 +379,173 @@ def main():
                                 best_idx = b_idx
 
                     kpts = kpts_data[best_idx].cpu().numpy()
-                    if len(kpts) >= 13:
-                        pose_detected = True
+                    kpts_raw = kpts
 
-                        def get_pt(idx):
+                    if len(kpts) >= 17:
+                        def get_raw_pt(idx):
                             return float(kpts[idx][0]) / w, float(kpts[idx][1]) / h, float(kpts[idx][2])
 
-                        raw_nose_x, raw_nose_y, c_nose = get_pt(IDX_NOSE)
-                        head_pos = (raw_nose_x, raw_nose_y)
+                        raw_nose_x, raw_nose_y, c_nose = get_raw_pt(IDX_NOSE)
+                        raw_ls_x, raw_ls_y, c_ls = get_raw_pt(IDX_LEFT_SHOULDER)
+                        raw_rs_x, raw_rs_y, c_rs = get_raw_pt(IDX_RIGHT_SHOULDER)
+                        raw_le_x, raw_le_y, c_le = get_raw_pt(IDX_LEFT_ELBOW)
+                        raw_re_x, raw_re_y, c_re = get_raw_pt(IDX_RIGHT_ELBOW)
+                        raw_lw_x, raw_lw_y, c_lw = get_raw_pt(IDX_LEFT_WRIST)
+                        raw_rw_x, raw_rw_y, c_rw = get_raw_pt(IDX_RIGHT_WRIST)
+                        raw_lh_x, raw_lh_y, c_lh = get_raw_pt(IDX_LEFT_HIP)
+                        raw_rh_x, raw_rh_y, c_rh = get_raw_pt(IDX_RIGHT_HIP)
 
-                        raw_ls_x, raw_ls_y, c_ls = get_pt(IDX_LS)
-                        raw_rs_x, raw_rs_y, c_rs = get_pt(IDX_RS)
-                        raw_le_x, raw_le_y, c_le = get_pt(IDX_LE)
-                        raw_re_x, raw_re_y, c_re = get_pt(IDX_RE)
-                        raw_lw_x, raw_lw_y, c_lw = get_pt(IDX_LW)
-                        raw_rw_x, raw_rw_y, c_rw = get_pt(IDX_RW)
-                        raw_lh_x, raw_lh_y, c_lh = get_pt(IDX_LH)
-                        raw_rh_x, raw_rh_y, c_rh = get_pt(IDX_RH)
+                        confidences = {
+                            "nose": c_nose, "ls": c_ls, "rs": c_rs,
+                            "le": c_le, "re": c_re, "lw": c_lw, "rw": c_rw,
+                            "lh": c_lh, "rh": c_rh
+                        }
 
-                        # Stabilisasi sendi bahu, siku, dan pinggul
-                        ls = stabilizer.update_point("ls", raw_ls_x, raw_ls_y, c_ls)
-                        rs = stabilizer.update_point("rs", raw_rs_x, raw_rs_y, c_rs)
-                        le = stabilizer.update_point("le", raw_le_x, raw_le_y, c_le)
-                        re = stabilizer.update_point("re", raw_re_x, raw_re_y, c_re)
-                        lh = stabilizer.update_point("lh", raw_lh_x, raw_lh_y, c_lh)
-                        rh = stabilizer.update_point("rh", raw_rh_x, raw_rh_y, c_rh)
+                        # Check if core torso is sufficiently detected
+                        core_conf = (c_ls + c_rs + c_lh + c_rh) / 4.0
+                        if core_conf >= 0.20:
+                            pose_detected = True
+                            head_pos = (raw_nose_x, raw_nose_y)
 
-                        # Biometrik: Jarak bahu aktual pengguna di layar
-                        shoulder_dist = math.hypot(ls[0] - rs[0], ls[1] - rs[1])
+                            # Filter Torso Anchors
+                            clean_ls_x, clean_ls_y, _ = tracker.update_joint("ls", raw_ls_x, raw_ls_y, c_ls)
+                            clean_rs_x, clean_rs_y, _ = tracker.update_joint("rs", raw_rs_x, raw_rs_y, c_rs)
+                            clean_lh_x, clean_lh_y, _ = tracker.update_joint("lh", raw_lh_x, raw_lh_y, c_lh)
+                            clean_rh_x, clean_rh_y, _ = tracker.update_joint("rh", raw_rh_x, raw_rh_y, c_rh)
+                            clean_n_x, clean_n_y, _ = tracker.update_joint("nose", raw_nose_x, raw_nose_y, c_nose)
 
-                        # Stabilisasi pergelangan tangan dengan Dynamic Arm Clamping
-                        lw = stabilizer.update_point("lw", raw_lw_x, raw_lw_y, c_lw,
-                                                     shoulder_ref=ls, shoulder_width=shoulder_dist, elbow_ref=le)
-                        rw = stabilizer.update_point("rw", raw_rw_x, raw_rw_y, c_rw,
-                                                     shoulder_ref=rs, shoulder_width=shoulder_dist, elbow_ref=re)
+                            ls = (clean_ls_x, clean_ls_y)
+                            rs = (clean_rs_x, clean_rs_y)
+                            lh = (clean_lh_x, clean_lh_y)
+                            rh = (clean_rh_x, clean_rh_y)
+                            nose_pt = (clean_n_x, clean_n_y)
 
-                        flap_count, flap_state_str, flap_freq, flap_power = flap_detector.update(lw, rw, ls, rs)
-                        raw_diff, norm_tilt = compute_smooth_tilt(lw, rw, deadzone=0.035, max_tilt=0.25)
+                            shoulder_dist = math.hypot(rs[0] - ls[0], rs[1] - ls[1])
 
-            # 2. Deteksi Manuver Dinamis ala Sky Peck:
-            # - TUCK TO DIVE (Sesuai Foto Pengguna): Tangan mengepal di dada atas/leher, siku ke bawah -> Dive Terjun Cepat
-            # - FLAP TO CLIMB (Kepakan Sayap): Menggerakkan tangan naik-turun -> Daya angkat vertikal halus & dorongan maju
-            # - LEAN TO TURN: Condongkan tubuh (torso) atau miringkan lengan untuk berbelok dan banking sayap
-            # - GLIDE: Tangan merentang mendatar -> Meluncur anggun dengan kecepatan jelajah stabil
-            is_tuck_dive = False
-            is_flapping = False
-            is_y = False
-            total_lean = 0.0
-            vert_mode_str = "SKY PECK: GLIDE (Meluncur Anggun)"
-            vert_mode_color = (255, 220, 60)
+                            # Filter Elbows
+                            clean_le_x, clean_le_y, _ = tracker.update_joint(
+                                "le", raw_le_x, raw_le_y, c_le,
+                                shoulder_ref=ls, shoulder_width=shoulder_dist
+                            )
+                            clean_re_x, clean_re_y, _ = tracker.update_joint(
+                                "re", raw_re_x, raw_re_y, c_re,
+                                shoulder_ref=rs, shoulder_width=shoulder_dist
+                            )
+                            le = (clean_le_x, clean_le_y)
+                            re = (clean_re_x, clean_re_y)
 
-            if pose_detected:
-                dy_l = lw[1] - ls[1]
-                dy_r = rw[1] - rs[1]
-                avg_dy = (dy_l + dy_r) * 0.5
-                wrist_dist = math.hypot(lw[0] - rw[0], lw[1] - rw[1])
+                            # Filter Wrists with Dynamic Anatomical Clamping & Forearm Kinematics
+                            clean_lw_x, clean_lw_y, _ = tracker.update_joint(
+                                "lw", raw_lw_x, raw_lw_y, c_lw,
+                                shoulder_ref=ls, shoulder_width=shoulder_dist, elbow_ref=le
+                            )
+                            clean_rw_x, clean_rw_y, _ = tracker.update_joint(
+                                "rw", raw_rw_x, raw_rw_y, c_rw,
+                                shoulder_ref=rs, shoulder_width=shoulder_dist, elbow_ref=re
+                            )
+                            lw = (clean_lw_x, clean_lw_y)
+                            rw = (clean_rw_x, clean_rw_y)
 
-                # Hitung Lean to Turn ala Sky Peck (50% Arm Tilt + 50% Torso Lean)
-                mid_s = ((ls[0] + rs[0]) * 0.5, (ls[1] + rs[1]) * 0.5)
-                mid_h = ((lh[0] + rh[0]) * 0.5, (lh[1] + rh[1]) * 0.5)
-                sw = max(0.08, shoulder_dist)
-                torso_lean = (mid_s[0] - mid_h[0]) / sw
-                total_lean = float(np.clip(0.50 * norm_tilt + 0.50 * (torso_lean * 2.2), -1.0, 1.0))
-                if abs(total_lean) < 0.05:
-                    total_lean = 0.0
+                            # 2. Calculate Scale-Invariant Biometrics
+                            biometrics = normalizer.calculate_biometrics(
+                                ls=ls, rs=rs, lh=lh, rh=rh,
+                                le=le, re=re, lw=lw, rw=rw,
+                                nose=nose_pt
+                            )
 
-                # a. TUCK DIVE (Foto Pengguna): Siku di bawah pergelangan tangan & bahu, tangan rapat di dada
-                elbows_below_wrists = (le[1] > lw[1] + 0.04) and (re[1] > rw[1] + 0.04)
-                elbows_below_shoulders = (le[1] > ls[1] + 0.07) and (re[1] > rs[1] + 0.07)
-                wrists_at_chest = (lw[1] > ls[1] - 0.12) and (rw[1] > rs[1] - 0.12) and (lw[1] < lh[1] - 0.08) and (rw[1] < rh[1] - 0.08)
-                hands_compact = wrist_dist < (shoulder_dist * 1.65)
+                            # 3. Evaluate Phase 2 Gesture State Machine
+                            current_kpts_dict = {
+                                "ls": ls, "rs": rs, "lh": lh, "rh": rh,
+                                "le": le, "re": re, "lw": lw, "rw": rw,
+                                "nose": nose_pt
+                            }
+                            gesture_result = gesture_sm.update(
+                                kpts=current_kpts_dict,
+                                biometrics=biometrics,
+                                is_tracking_valid=True
+                            )
 
-                if elbows_below_wrists and elbows_below_shoulders and wrists_at_chest and hands_compact:
-                    is_tuck_dive = True
+            # Update Tracker State Machine
+            tracking_state = tracker.update_tracking_state(pose_detected, confidences)
 
-                # b. FLAPPING: Siklus kepakan aktif (Fly Up + Speed Up ala Sky Peck)
-                now_t = time.perf_counter()
-                has_recent_flap = (now_t - flap_detector.last_flap_time) < 0.60 and (flap_detector.last_flap_time > 0)
-                is_active_flapping = (flap_power > 0.20 and not is_tuck_dive)
-                if has_recent_flap or is_active_flapping:
-                    is_flapping = True
+            # Safe Fallback when LOST
+            if tracking_state == TrackingState.LOST:
+                ls = (0.42, 0.40)
+                rs = (0.58, 0.40)
+                lh = (0.45, 0.70)
+                rh = (0.55, 0.70)
+                le = (0.32, 0.42)
+                re = (0.68, 0.42)
+                lw = (0.22, 0.43)
+                rw = (0.78, 0.43)
+                nose_pt = (0.50, 0.26)
+                biometrics = normalizer.calculate_biometrics(ls, rs, lh, rh, le, re, lw, rw, nose_pt)
+                gesture_result = gesture_sm.update({}, biometrics, is_tracking_valid=False)
 
-                # c. ORIENTASI BADAN (Body Pitch: -1.0 s/d +1.0)
-                head_dist = mid_s[1] - raw_nose_y
-                head_ratio = head_dist / sw
+            # 4. Player Calibration Step (Phase 4)
+            current_kpts = current_kpts_dict if pose_detected else None
+            calib_state, calib_prog, calib_text = calibrator.update(biometrics, current_kpts)
 
-                # Signal orientasi kepala/badan (netral ~ 0.48)
-                head_signal = (head_ratio - 0.48) / 0.14
-                head_signal = max(-1.0, min(1.0, head_signal))
-                if abs(head_signal) < 0.22:
+            # 5. Mouth Aspect Ratio / Water Breath Tracker
+            is_water_breathing = False
+            mouth_score = 0.0
+            if pose_detected and mouth_tracker.available:
+                is_water_breathing, mouth_score, _ = mouth_tracker.process_crop(frame, head_pos)
+
+            # 6. Telemetri UDP ke Unity (34-float CSV: Pose + Biometrik + Gestur Phase 2 + Kalibrasi Phase 4)
+            udp_mouth_val = 1.0 if is_water_breathing else mouth_score
+            tracking_state_float = 1.0 if tracking_state == TrackingState.TRACKED else (0.5 if tracking_state == TrackingState.DEGRADED else 0.0)
+
+            # Map state to ID: 0=Glide, 1=Flap, 2=Dive, 3=Dash, 4=Hover, 5=GentleDescent, 6=FlyUp
+            state_id_map = {
+                GestureState.NEUTRAL_GLIDE.value: 0.0,
+                GestureState.FLAPPING.value: 1.0,
+                GestureState.TUCK_DIVE.value: 2.0,
+                GestureState.PROPELLER_DASH.value: 3.0,
+                GestureState.HOVER.value: 4.0,
+                GestureState.GENTLE_DESCENT.value: 5.0,
+                GestureState.FLY_UP.value: 6.0
+            }
+            active_id = state_id_map.get(gesture_result["active_state"], 0.0)
+
+            # Body pitch decoupled orientation
+            body_pitch = 0.0
+            if biometrics is not None and nose_pt is not None:
+                head_dist = biometrics["mid_shoulder"][1] - nose_pt[1]
+                head_ratio = head_dist / max(0.05, biometrics["shoulder_width"])
+                head_signal = np.clip((head_ratio - 0.48) / 0.14, -1.0, 1.0)
+                if abs(head_signal) < 0.20:
                     head_signal = 0.0
-                else:
-                    head_signal = math.copysign((abs(head_signal) - 0.22) / 0.78, head_signal)
+                body_pitch = float(head_signal)
 
-                # d. DECOUPLING: Saat tangan dikepakkan, ayunan tangan TIDAK BOLEH memicu Pose Y / Pose A!
-                if is_flapping:
-                    is_y = False
-                    is_a = False
+            sender.send_pose(
+                ls=ls, rs=rs, lw=lw, rw=rw, lh=lh, rh=rh,
+                mouth_open=udp_mouth_val,
+                le=le, re=re,
+                is_dive=1.0 if gesture_result["is_tuck_dive"] else 0.0,
+                is_flap=1.0 if gesture_result["is_flapping"] else 0.0,
+                flap_freq=gesture_result["flap_frequency"],
+                flap_power=gesture_result["flap_power"],
+                body_pitch=body_pitch,
+                nose=nose_pt,
+                wingspan_ratio=biometrics["wingspan_ratio"] if biometrics else 1.2,
+                flap_height=biometrics["avg_flap_height"] if biometrics else 0.0,
+                lean_angle_deg=biometrics["lean_angle_deg"] if biometrics else 0.0,
+                tracking_state=tracking_state_float,
+                is_dash=1.0 if gesture_result["is_propeller_dash"] else 0.0,
+                dash_power=gesture_result["dash_power"],
+                steering_input=gesture_result["steering_input"],
+                active_state_id=active_id,
+                calib_state_id=float(calib_state.value),
+                calib_progress=float(calib_prog),
+                is_hover=1.0 if gesture_result.get("is_hover", False) else 0.0,
+                is_gentle_descent=1.0 if gesture_result.get("is_gentle_descent", False) else 0.0,
+                is_fly_up=1.0 if gesture_result.get("is_fly_up", False) else 0.0,
+                chest_elevation=biometrics["chest_elevation"] if biometrics else 1.55,
+                forearm_flap_power=gesture_result.get("hover_power", 0.0)
+            )
 
-                    # Periksa apakah busur ayunan kepakan diarahkan ke atas kepala (high arc) atau ke bawah (low arc)
-                    avg_wrist_y = (lw[1] + rw[1]) * 0.5
-                    arm_aim_offset = mid_s[1] - avg_wrist_y  # Positif jika tangan mengepak di atas bahu
-                    if arm_aim_offset > 0.08:
-                        flap_aim = min(1.0, (arm_aim_offset - 0.08) / 0.12)
-                    elif arm_aim_offset < -0.12:
-                        flap_aim = -min(1.0, (abs(arm_aim_offset) - 0.12) / 0.12)
-                    else:
-                        flap_aim = 0.0
-
-                    body_pitch = 0.55 * head_signal + 0.45 * flap_aim
-                else:
-                    body_pitch = head_signal
-                    is_y = ((dy_l < -0.04 and dy_r < -0.04) or (avg_dy < -0.05)) and not is_tuck_dive
-                    is_a = ((dy_l > 0.05 and dy_r > 0.05) or (avg_dy > 0.06)) and not is_tuck_dive
-
-                # Tentukan label dan warna status untuk HUD
-                if is_tuck_dive:
-                    vert_mode_str = "SKY PECK: TUCK DIVE (Menukik Cepat ↓↓)"
-                    vert_mode_color = (0, 100, 255)
-                elif is_flapping:
-                    vert_mode_str = f"SKY PECK: FLAP TO CLIMB ↑ (+{flap_power*100:.0f}%)"
-                    vert_mode_color = (0, 255, 120)
-                elif is_y:
-                    vert_mode_str = "SKY PECK: ZOOM CLIMB ↑"
-                    vert_mode_color = (0, 255, 220)
-                elif is_a:
-                    vert_mode_str = "SKY PECK: DIVE ↓"
-                    vert_mode_color = (0, 160, 255)
-                else:
-                    vert_mode_str = "SKY PECK: GLIDE (Meluncur Anggun)"
-                    vert_mode_color = (255, 220, 60)
-
-            # 3. Inferensi Mulut Terbuka via Crop Area Kepala
-            is_water_breathing, mouth_score, mouth_center = mouth_tracker.process_crop(frame, head_pos)
-
-            # 4. Pengiriman Paket UDP ke Unity (13 float dasar + siku + flag gestur + body_pitch + nose)
-            if pose_detected:
-                udp_mouth_val = 1.0 if is_water_breathing else mouth_score
-                sender.send_pose(
-                    ls, rs, lw, rw, lh, rh,
-                    mouth_open=udp_mouth_val,
-                    le=le, re=re,
-                    is_dive=1.0 if is_tuck_dive else 0.0,
-                    is_flap=1.0 if is_flapping else 0.0,
-                    flap_freq=flap_freq,
-                    flap_power=flap_power,
-                    body_pitch=body_pitch,
-                    nose=(raw_nose_x, raw_nose_y)
-                )
-
-            latency_ms = (time.perf_counter() - t_start) * 1000.0
-
+            # FPS calculation
             curr_time = time.time()
             dt = curr_time - prev_time
             prev_time = curr_time
@@ -291,73 +555,47 @@ def main():
                 fps_history.pop(0)
             avg_fps = sum(fps_history) / len(fps_history)
 
-            # 5. Gambar Anotasi Pose & Visual Feedback pada Frame
-            if pose_detected:
-                def to_px(pt):
-                    return (int(np.clip(pt[0], 0, 1) * w), int(np.clip(pt[1], 0, 1) * h))
+            # 7. Render CV Debug Visualization (Section 2.6 & Section 4.1)
+            if not args.headless or video_sender is not None:
+                draw_debug_overlay(
+                    frame=frame,
+                    all_kpts=kpts_raw,
+                    tracker=tracker,
+                    biometrics=biometrics,
+                    fps=avg_fps,
+                    latency_ms=latency_ms,
+                    tracking_state=tracking_state,
+                    gesture_result=gesture_result,
+                    calib_state=calib_state,
+                    calib_progress=calib_prog,
+                    calib_text=calib_text
+                )
 
-                p_ls, p_rs = to_px(ls), to_px(rs)
-                p_lw, p_rw = to_px(lw), to_px(rw)
-                p_lh, p_rh = to_px(lh), to_px(rh)
-                p_le, p_re = to_px(le), to_px(re)
-
-                color_bone = (0, 255, 180)
-                cv2.line(frame, p_ls, p_rs, color_bone, 3)
-                cv2.line(frame, p_ls, p_le, color_bone, 3)
-                cv2.line(frame, p_le, p_lw, color_bone, 3)
-                cv2.line(frame, p_rs, p_re, color_bone, 3)
-                cv2.line(frame, p_re, p_rw, color_bone, 3)
-                cv2.line(frame, p_ls, p_lh, color_bone, 3)
-                cv2.line(frame, p_rs, p_rh, color_bone, 3)
-                cv2.line(frame, p_lh, p_rh, color_bone, 3)
-
-                is_above = (lw[1] < ls[1]) and (rw[1] < rs[1])
-                hand_col = (0, 255, 0) if is_above else (255, 50, 200)
-                cv2.circle(frame, p_lw, 10, hand_col, -1)
-                cv2.circle(frame, p_rw, 10, hand_col, -1)
-
-            if is_water_breathing and mouth_center is not None:
-                mx, my = mouth_center
-                cv2.circle(frame, (mx, my), 22, (255, 220, 0), 2)
-
-            # 6. Kirim Frame Video ke Unity via UDP (PIP Preview)
+            # Send Video Preview to Unity PIP (Port 5053)
             if video_sender is not None:
                 video_sender.send_frame(frame)
 
-            # 7. Rendering GUI Window (Kecuali mode headless)
+            # Display GUI window if not headless
             if not args.headless:
-                # HUD Telemetri
-                overlay = frame.copy()
-                cv2.rectangle(overlay, (20, 15), (550, 195), (15, 15, 15), -1)
-                cv2.addWeighted(overlay, 0.78, frame, 0.22, 0, frame)
-
-                status_txt = "TERKUNCI" if pose_detected else "MENCARI..."
-                cv2.putText(frame, f"AR DRAGON CV SENDER [CUDA] - {status_txt}", (35, 45),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
-                cv2.putText(frame, f"FPS: {avg_fps:.1f}  |  Latensi AI: {latency_ms:.1f} ms", (35, 75),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 120), 2)
-                cv2.putText(frame, f"Manuver: {vert_mode_str}", (35, 105),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, vert_mode_color, 2)
-                cv2.putText(frame, f"Sayap: {flap_state_str} (Freq: {flap_freq:.1f} Hz) | Lean: {total_lean:+.2f}", (35, 135),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
-                cv2.putText(frame, f"Mulut: {'SEMBUR AIR' if is_water_breathing else 'TUTUP'} ({mouth_score:.2f})", (35, 160),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 220, 0) if is_water_breathing else (180, 180, 180), 1)
-                cv2.putText(frame, f"UDP  : 127.0.0.1:{args.port} | PIP: :{args.video_port}", (35, 182),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1)
-
-                cv2.imshow("AR Dragon - Active CV Sender (YOLOv8n-pose)", frame)
+                cv2.imshow("AR Dragon Sky Guardian - CV Debug Overlay (Phase 2)", frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q') or key == 27:
+                    print("\n[*] Dihentikan oleh pengguna.")
                     break
+                elif key == ord('c') or key == ord('C'):
+                    calibrator.start_calibration()
+
     except KeyboardInterrupt:
-        print("\n[*] Sinyal interrupt diterima, mematikan sender...")
+        print("\n[*] Menghentikan Active CV Sender...")
     finally:
         cam.release()
-        cv2.destroyAllWindows()
         sender.close()
         if video_sender is not None:
             video_sender.close()
-        print("[*] Active CV Sender berhasil dihentikan secara aman.")
+        if not args.headless:
+            cv2.destroyAllWindows()
+        print("[*] CV Pipeline dihentikan secara bersih.")
+
 
 if __name__ == "__main__":
     main()

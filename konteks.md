@@ -1,48 +1,48 @@
-# 🐉 PROJECT CONTEXT & TECHNICAL BIBLE: AR DRAGON SKY GUARDIAN (v5.1 — SKY PECK MOTION FLIGHT DYNAMICS)
+# 🐉 PROJECT CONTEXT & TECHNICAL BIBLE: AR DRAGON SKY GUARDIAN (v6.0 — ADVANCED SKY PECK FLIGHT & MODULAR ARCHITECTURE)
 
 > **Fungsi Dokumen:** Rujukan teknikal utama (*Single Source of Truth*) bagi kolaborasi antara Manusia (Developer) dan AI Agent (Hermes / Antigravity Agent).
 > **Pasangan Dokumen:** Gunakan bersama `prd.md` untuk implementasi alur kerja berperingkat.
-> **Status Implementasi:** Mekanik simulasi penerbangan alami ala **Sky Peck** (Flap to Climb halus tanpa pitch nodding, Lean to Turn & Bank, Tuck to Dive kecepatan tinggi $28\text{ m/s}$, Swoop Climb otomatis paska-dive, dan Glide anggun) telah **100% aktif, terkompilasi bersih (0 Compiler Errors), dan terverifikasi di Unity Play Mode**.
+> **Status Implementasi:** Seluruh arsitektur penerbangan tubuh ala **Sky Peck** (Flap to Climb, Continuous Lean to Turn, Tuck to Dive 28 m/s, Propeller Dash 26 m/s, Swoop Climb, Hover, Fly Up), **Peluncur Otomatis Python CV (`PythonProcessManager.cs`)**, **Arsitektur Input Modular (`IFlightInputProvider.cs` & `DefaultFlightInputMapper.cs`)**, dan **Protokol Telemetri UDP 39-Float** telah **100% aktif, terkompilasi bersih (0 Compiler Errors), dan terverifikasi di Unity Play Mode**.
 
 ---
 
 ## 1. RINGKASAN KONSEP & IDENTITAS PROJEK
 
-### 1.1 Identiti Gim
-- **Nama Gim / Project Unity:** AR Dragon Sky Guardian (nama kode lama: `Dragon Wing AR`, dipakai pada namespace C# `DragonWingAR.*`)
-- **Genre:** Exergaming PC berasaskan Webcam / 3D Semi-Open-World Elytra Flight Action / Edukasi Alam Sekitar
-- **Enjin & Stack:**
+### 1.1 Identitas Game
+- **Nama Game / Project Unity:** AR Dragon Sky Guardian (nama kode: `DragonWingAR.*`)
+- **Genre:** Exergaming PC berbasis Webcam / 3D Semi-Open-World Sky Peck Flight Action / Edukasi Lingkungan Hidup
+- **Engine & Technology Stack:**
   - **Unity:** Unity 6 (`6000.3.7f1`) Universal Render Pipeline (URP)
-  - **Python:** Python 3.10+ (PyTorch CUDA, YOLOv8n-pose GPU, OpenCV 4.x)
-  - **Blender:** Blender 5.1 / 5.2 CLI pipeline
-- **Watak Utama:** Naga Penjaga Langit Elemen Air & Embun Purba (`Dragon_Model.blend`)
-- **Misi Utama:** Menjelajah pulau daratan besar 800x800m dan memulihkan 3 desa daripada pencemaran udara, kebakaran hutan, dan kemarau menggunakan gestur tubuh interaktif di hadapan webcam.
+  - **Python:** Python 3.10+ (PyTorch CUDA, YOLOv8n-pose Tensor Cores ~18 ms / 54 FPS, OpenCV 4.x)
+  - **Blender:** Blender 5.1 / 5.2 CLI pipeline (Bake Transforms & Vertex Normals)
+- **Karakter Utama:** Naga Penjaga Langit Elemen Air & Embun Purba (`Dragon_Model.blend` / `Dragon_Model.fbx`)
+- **Misi Utama:** Menjelajah pulau daratan besar 800x800m dan memulihkan 3 desa dari polusi udara, kebakaran hutan, dan kemarau menggunakan gestur tubuh alami di hadapan webcam.
 
-### 1.2 Matriks Pembahagian Tugas (Semi-Autonomous Workflow)
+### 1.2 Matriks Pembagian Tanggung Jawab (Semi-Autonomous Workflow)
 
-| Kategori Tugas | Pelaksana Utama | Tanggungjawab |
+| Kategori Tugas | Pelaksana Utama | Tanggung Jawab |
 | :--- | :--- | :--- |
-| **Skrip Python CV & UDP Streaming (5052 & 5053)** | 🤖 **AI Agent** | Menulis modul inferensi YOLOv8n-pose, One-Euro filter, detektor Tuck Dive geometri siku, Flap detector, dan streaming JPEG PIP. |
-| **Skrip C# Unity (Navigasi Elytra 3D, HUD, UI)** | 🤖 **AI Agent** | Menulis keseluruhan kod C# bebas ralat (*0 Compiler Errors*), dinamika fisika Elytra, penyesuaian URP Lit, dan proteksi raycast tanah. |
+| **Python CV Engine & UDP Streaming (5052 & 5053)** | 🤖 **AI Agent** | Menulis modul inferensi YOLOv8n-pose, RobustKeypointTracker, BiometricNormalizer, GestureStateMachine, detektor Propeller Dash, dan video PIP. |
+| **Unity C# Engine (Sky Peck Physics, Input Mapper, HUD, Lifecycle)** | 🤖 **AI Agent** | Menulis kode C# bebas error (*0 Compiler Errors*), dinamika Sky Peck, arsitektur modular `IFlightInputProvider`, auto-launch Python process, dan raycast protection. |
 | **Integrasi & Skala Aset 3D (`.blend` & `.fbx`)** | 🤖 **AI Agent + User** | Ekspor Blender CLI dengan bake transforms, pengaturan skala naga 5m dan pulau 800m di scene Unity. |
-| **Ujian Play Mode & Kalibrasi Webcam Nyata** | 👨‍💻 **Manusia (User)** | Menguji gerakan tubuh di depan webcam, validasi responsivitas gameplay, dan evaluasi pengalaman bermain. |
+| **Pengujian Play Mode & Evaluasi Gerakan Fisik** | 👨‍💻 **Manusia (User)** | Menguji gerakan tubuh di depan webcam, validasi responsivitas gameplay, dan evaluasi kenyamanan bermain. |
 
 ---
 
-## 2. PRINSIP DESAIN & ARSITEKTUR TEKNIS
+## 2. SPESIFIKASI ASET 3D & SKALA DUNIA
 
 ### 2.1 Spesifikasi Karakter Naga (`Dragon_Model.blend` / `Dragon_Model.fbx`)
-- **Aset 3D:** Model naga resmi menggunakan `Dragon_Model.blend` yang diekspor menjadi `Dragon_Model.fbx` di folder `Assets/Assets 3D/`.
+- **Aset 3D:** Model naga resmi menggunakan `Dragon_Model.blend` (diekspor menjadi `Dragon_Model.fbx` di folder `Assets/Assets 3D/`).
 - **Dimensi Fisik Nyata (1 Unity unit = 1 meter):**
-  - **Bentang Sayap (X):** $5.06\text{ meter}$
-  - **Panjang Tubuh (Z):** $3.60\text{ meter}$ (dari moncong kepala ke ujung ekor)
-  - **Tinggi (Y):** $1.59\text{ meter}$
-  - **Pusat Pivot:** Di-center tepat pada titik `(0, 0, 0)` koordinat lokal pemain.
+  - **Bentang Sayap (Wingspan X):** $5.06\text{ meter}$
+  - **Panjang Tubuh (Length Z):** $3.60\text{ meter}$ (dari moncong kepala ke ujung ekor)
+  - **Tinggi Tubuh (Height Y):** $1.59\text{ meter}$
+  - **Pusat Pivot:** Terpusat di `(0, 0, 0)` koordinat lokal pemain.
 - **Material & Shading:**
   - 12 Material **URP Lit** dengan mode *Double-Sided Rendering* (`_Cull = 0`) agar membran sayap dan sirip ekor tampak solid dari kedua sisi.
-  - Palet warna: Teal body (`M_Dragon_Body_Teal`), turquoise wings (`M_Dragon_Wing_Membrane`), cream belly (`M_Dragon_Belly_Cream`), amber eyes (`M_Dragon_Eye_Amber`), dark dorsal ridges (`M_Dragon_Dorsal_DarkTeal`), and crystal chest (`M_Dragon_Chest_Crystal`).
+  - Palet: Teal body (`M_Dragon_Body_Teal`), turquoise wings (`M_Dragon_Wing_Membrane`), cream belly (`M_Dragon_Belly_Cream`), amber eyes (`M_Dragon_Eye_Amber`), dark dorsal ridges (`M_Dragon_Dorsal_DarkTeal`), and crystal chest (`M_Dragon_Chest_Crystal`).
 - **Kamera Follow (Third-Person Cinematic):**
-  - Parent: Child kepada `Dragon_Player`
+  - Parent: Child terhadap `Dragon_Player`
   - `localPosition`: `(0.00, 2.50, -6.50)`
   - `localEulerAngles`: `(14.00, 0.00, 0.00)`
   - FOV: $60^\circ$ | Far Clip Plane: $1500\text{ m}$
@@ -64,105 +64,114 @@
 
 ---
 
-## 3. MEKANIK PENERBANGAN ALA SKY PECK (SKY PECK MOTION FLIGHT DYNAMICS)
+## 3. DINAMIKA PENERBANGAN ALA SKY PECK (SKY PECK MOTION FLIGHT DYNAMICS)
 
-Sistem penerbangan dirancang meniru game terbang tubuh indie legendaris **Sky Peck** (Ivan, *skypeck.fun*), menggabungkan rasa kebebasan meluncur anggun dengan respon kinestetik yang alami tanpa menyebabkan disorientasi kamera atau *pitch nodding*:
+Sistem penerbangan dirancang mengadopsi mekanisme game terbang tubuh indie **Sky Peck** (*skypeck.fun*), memadukan kebebasan meluncur anggun dengan respon fisik alami tanpa menyebabkan disorientasi kamera atau goyangan pitch:
 
 ```
-        \   /                 — o —                    | o |
-         \o/                    |                     /  |  \
-   FLAP TO CLIMB             GLIDE                   TUCK TO DIVE
-   (Mendaki Halus)       (Meluncur Anggun)       (Menukik Cepat ↓↓)
-   Lift Vertikal + Dorong  Jelajah 14 m/s          Pitch: -45° (Dive)
-   Pitch Stabil & Tenang  Sink Rate: -1.0 m/s      Akselerasi Kencang
+        \   /                 — o —                    | o |                     ( @ )
+         \o/                    |                     /  |  \                   /  |  \
+   FLAP TO CLIMB             GLIDE                   TUCK TO DIVE            PROPELLER DASH
+   (Mendaki Halus)       (Meluncur Anggun)       (Menukik Cepat ↓↓)       (Dorongan Rotasi Lengan)
+   Lift Vertikal + Dorong  Jelajah 14 m/s          Pitch: -40° s/d -45°     Akselerasi Impulsif
+   Pitch Stabil & Tenang  Sink Rate: -1.0 m/s      Akselerasi Gravitasi     Hingga 26 m/s!
    Tanpa Nodding!         Otomatis SWOOP CLIMB!    Hingga 28 m/s!
 ```
 
-### 3.1 Lima Pilar Inti Mekanik Sky Peck
-1. **Flap to Climb (Mengepak untuk Mendaki):**
-   - Pemain mengepakkan tangan ke atas dan ke bawah secara ritmis.
-   - Setiap kepakan langsung menghasilkan **daya angkat vertikal halus** ($v_{\text{vertical}} \to +6.5\text{ m/s}$) dan dorongan maju ($+12\text{ m/s}^2$).
-   - **Bebas Pitch Nodding (Decoupled):** Ayunan tangan sama sekali tidak memicu Pose Y (mendongak) saat upstroke ataupun Pose A (menunduk) saat downstroke. Kepala naga tetap mendongak tenang $+8^\circ \sim +12^\circ$, menghasilkan pendakian vertikal yang stabil dan nyaman di mata.
-2. **Lean to Bank & Turn (Kemudi Alami Torso + Kemiringan Sayap):**
-   - Pemain dapat berbelok dengan mencondongkan badan atas (*torso lean* $\frac{\text{mid\_shoulder.x} - \text{mid\_hip.x}}{\text{shoulder\_dist}}$) ataupun dengan memiringkan tangan (*arm tilt*).
-   - Penggabungan $50\%$ kemiringan tangan $+ 50\%$ condong tubuh memungkinkan pemain bermanuver seperti burung layang-layang asli.
-   - Kemudi menghasilkan yaw turn $65^\circ/\text{s}$ dan roll banking visual sayap hingga $\pm 35^\circ$.
-3. **Tuck to Dive (Menukik Curam Kecepatan Tinggi):**
-   - Tangan dirapatkan mengepal di dada atas dengan siku mengarah ke bawah di samping badan (persis seperti foto pose pengguna).
-   - Sayap melipat aerodinamis rapat, hidung menukik tajam $-45^\circ$, dan naga meluncur kencang hingga batas $28\text{ m/s}$.
-4. **Swoop Climb Out of Dive (Luncuran Melambung Menanjak Otomatis):**
-   - Setelah menukik kencang, pemain cukup membuka kembali tangannya ke posisi Glide.
-   - Kelebihan kecepatan ($v_{\text{airspeed}} > 14\text{ m/s}$) secara otomatis dikonversi oleh sistem aerodinamika naga menjadi luncuran melambung naik (*swoop soaring*) yang megah, menaikkan ketinggian naga secara anggun sebelum kembali rata pada kecepatan jelajah.
-5. **Glide (Meluncur Santai & Anggun):**
+### 3.1 Tujuh Mode Gerak Sky Peck
+1. **Flap to Climb (Mengepakkan Tangan untuk Mendaki):**
+   - Pemain mengepakkan tangan naik-turun secara ritmis melintasi bahu.
+   - Menghasilkan gaya angkat vertikal halus ($+6.5\text{ m/s}$) dan dorongan akselerasi ($+12\text{ m/s}^2$).
+   - **Pitch Decoupling:** Gerakan kepakan tidak memicu perubahan pitch naik-turun (*zero pitch nodding*). Hidung naga tetap tenang mendaki ($+8^\circ \sim +12^\circ$).
+2. **Continuous Lean to Bank & Turn (Kemudi Alami Torso + Kemiringan Sayap):**
+   - Pemain berbelok dengan mencondongkan torso (*torso lean* $\frac{\text{mid\_shoulder.x} - \text{mid\_hip.x}}{\text{shoulder\_dist}}$) ataupun memiringkan lengan (*arm tilt*).
+   - Menggabungkan $50\%$ kemiringan tangan $+ 50\%$ condong tubuh dengan kurva non-linear ($1.35$) untuk kemudi mikro yang presisi. Kemudi Yaw mencapai $65^\circ/\text{s}$ dan banking sayap visual $\pm 35^\circ$.
+3. **Tuck to Dive (Menukik Curam Kecepatan Tinggi — Pose Foto Pengguna):**
+   - Tangan dirapatkan mengepal di dada atas dengan siku mengarah ke bawah di samping badan.
+   - Sayap melipat aerodinamis rapat, koefisien drag berkurang, hidung menukik tajam ($-40^\circ \sim -45^\circ$), berakselerasi kencang hingga $28\text{ m/s}$.
+4. **Propeller Dash (Dorongan Akselerasi Rotasi Lengan):**
+   - Pemain memutar lengan secara kontinu menyerupai baling-baling (*monotonic angular displacement*).
+   - Menghasilkan dorongan kecepatan instan (*dash impulse*) hingga $26\text{ m/s}$ untuk melintasi jarak jauh dengan cepat.
+5. **Swoop Climb Out of Dive (Luncuran Melambung Menanjak Otomatis):**
+   - Membuka kembali tangan ke posisi Glide setelah dive berkecepatan tinggi ($> 14\text{ m/s}$) secara otomatis mengonversi kelebihan energi kinetik menjadi luncuran melambung naik (*swoop soaring climb*) yang megah ke angkasa.
+6. **Glide & Gentle Descent (Meluncur Santai & Anggun):**
    - Kedua tangan direntangkan mendatar ke samping.
-   - Naga meluncur stabil pada kecepatan jelajah $14\text{ m/s}$ dengan laju turun (*sink rate*) alami yang sangat lembut ($-1.0\text{ m/s}$).
+   - Meluncur stabil pada kecepatan jelajah $14\text{ m/s}$ dengan laju turun alami lembut ($-1.0\text{ m/s}$).
+7. **Hover & Fly Up (Melayang Halus & Penyesuaian Ketinggian):**
+   - Lengan atas dirapatkan ke samping badan dengan gerakan kepakan ringan lengan bawah untuk melayang di tempat (*hover*).
+   - Mengangkat dada dan mencondongkan badan ke atas untuk mendaki lembut (*fly up*).
 
-### 3.2 Matriks Gestur Sky Peck
-
-| Gestur Tubuh | Sikap Fisik Pemain | Respon & Fisika Naga |
-| :--- | :--- | :--- |
-| **Mengepakkan Tangan (Flap to Climb)** | Gerakan kedua tangan naik-turun melintasi bahu | **Mendaki Vertikal Halus:** Gaya angkat vertikal $+6.5\text{ m/s}$ & dorongan maju $+12\text{ m/s}^2$. Pitch tenang tanpa ayunan bolak-balik. |
-| **Rentangkan Tangan (Glide)** | Kedua tangan direntangkan mendatar sejajar bahu | **Meluncur Anggun:** Jelajah stabil $14\text{ m/s}$, sink rate alami $-1.0\text{ m/s}$. Mengaktifkan *Swoop Climb* jika baru keluar dari dive. |
-| **Tuck Dive (Pose di Foto Pengguna)** | Tangan mengepal di dada atas / leher, siku ke bawah di samping badan | **Dive Terjun Cepat:** Pitch menukik curam $-45^\circ$, naga terjun bebas berakselerasi kencang hingga $24-28\text{ m/s}$. |
-| **Condongkan Badan / Tilt Lengan (Lean to Turn)** | Condongkan torso ke kiri/kanan atau miringkan lengan | **Kemudi Belok & Banking:** Kemudi Yaw responsif ($65^\circ/\text{s}$) disertai kemiringan banking sayap visual ($\pm 35^\circ$). |
-| **Buka Mulut Lebar / Rapatkan Tangan** | Buka rahang mulut atau tangkupkan kedua tangan di dada | **Semburan Air Purba:** Memancarkan semburan air untuk memadamkan api desa 2. |
-| **Angkat Kedua Tangan Tinggi** | Kedua tangan diangkat lurus tinggi ke atas kepala | **Hujan Embun Restorasi:** Memanggil hujan embun pemulih tanah tandus desa 3. |
-
-### 3.4 Proteksi Ketinggian Daratan (Terrain Clearance Protection)
+### 3.2 Proteksi Ketinggian Daratan (Terrain Clearance Protection)
 - Naga dilengkapi sensor raycast otomatis ke bawah sejauh 500 meter.
 - **Plafon Minimum Dinamis:** `safeMinAltitude = terrainHeight + 3.5f`.
-- Jika jarak ke daratan $< 8.0\text{ m}$, hidung naga secara otomatis diratakan (pitch dibatasi tidak boleh menukik ke bawah), dan jika jarak $< 3.5\text{ m}$, naga secara mulus menyusuri lereng bukit pulau tanpa pernah menembus geometri.
+- Jika jarak ke daratan $< 8.0\text{ m}$, hidung naga secara otomatis diratakan (pitch dibatasi tidak boleh menukik), dan jika jarak $< 3.5\text{ m}$, naga secara mulus menyusuri kontur bukit pulau tanpa menembus geometri daratan.
 - **Plafon Maksimum:** `maxAltitude = 160f` (memungkinkan naga terbang bebas melintasi puncak gunung tertinggi $118.9\text{ m}$).
 
 ---
 
-## 4. PROTOKOL JARINGAN UDP GANDA (DUAL-PORT UDP v5.0)
+## 4. ARSITEKTUR INPUT MODULAR & PENGELOLA PROSES PYTHON
+
+### 4.1 Arsitektur Input Modular Unity (`IFlightInputProvider`)
+Untuk memastikan kode pergerakan naga terisolasi dari detail teknis sensor kamera, sistem menggunakan pola *Dependency Inversion*:
+
+```
+[UDPPoseReceiver.cs] (Sensor Raw Pose 39-Float)
+         │
+         ▼
+[DefaultFlightInputMapper.cs] (Mapping, Deadzone, Ease Curves)
+         │
+         ▼  (FlightCommand Struct)
+[DragonFlightController.cs] (Sky Peck Aerodynamics, Collision, Physics)
+```
+
+- **`FlightCommand`:** Struct serializable yang menyimpan `TurnInput`, `PitchInput`, `BodyPitch`, `IsFlapping`, `FlapPower`, `IsTuckDiving`, `IsPropellerDash`, `DashPower`, `IsGliding`, `IsWaterBreathing`, `IsHandsHighUp`, `IsHover`, `IsFlyUp`, dan `ActiveStateId`.
+- **`DefaultFlightInputMapper.cs`:** Menerapkan kurva kenyamanan non-linear, deadzone, dan filter anti-fatigue.
+
+### 4.2 Peluncur Proses Otomatis (`PythonProcessManager.cs`)
+- **Zero-Manual Launch:** Pemain/Developer **tidak perlu lagi membuka terminal terpisah** untuk menjalankan Python.
+- **Auto-Lifecycle:**
+  1. **Saat Play Mode / Game Dimulai (`Awake()`):** `PythonProcessManager.cs` mendeteksi keberadaan `venv/Scripts/python.exe` dan `active_cv_sender.py`, lalu meluncurkannya sebagai child process Windows dengan PID yang dipantau.
+  2. **Saat Play Mode / Game Berhenti (`ExitingPlayMode` / `OnApplicationQuit`):** Proses Python dihentikan seketika dengan `process.Kill()` dan *Windows TaskKill tree fallback* (`taskkill /PID {pid} /F /T`) sehingga webcam langsung dilepaskan tanpa tersangkut (zero webcam lock).
+- **Indikator HUD:** In-Game HUD menampilkan status koneksi live `Python CV : AKTIF (PID: xxxxx) [AUTO-SYNC]`.
+
+---
+
+## 5. PROTOKOL JARINGAN UDP GANDA (DUAL-PORT UDP v6.0)
 
 Modul Python dan Unity berkomunikasi melalui 2 port socket UDP terpisah berkecepatan tinggi:
 
 ```
 [Python CV Sender]
-   ├── UDP 127.0.0.1:5052 (Pose CSV Telemetri 21 Float) ──> [UDPPoseReceiver.cs]
+   ├── UDP 127.0.0.1:5052 (Pose Telemetri 39-Float CSV) ──> [UDPPoseReceiver.cs]
    └── UDP 127.0.0.1:5053 (JPEG Frame PIP Video) ──────────> [InGameFlightHUD.cs]
 ```
 
-### 4.1 Port 5052: Telemetri Pose Tubuh (21-Float CSV)
-- **Host & Port:** `127.0.0.1:5052`
-- **Frekuensi:** $\ge 30\text{ FPS}$ (latensi AI $\approx 10-15\text{ ms}$ pada CUDA GPU)
-- **Format String CSV (21 nilai):**
-  ```text
-  LS_X,LS_Y,RS_X,RS_Y,LW_X,LW_Y,RW_X,RW_Y,LH_X,LH_Y,RH_X,RH_Y,MOUTH_OPEN,LE_X,LE_Y,RE_X,RE_Y,IS_DIVE,IS_FLAP,FLAP_FREQ,FLAP_POWER
-  ```
-  - `0..1` = Bahu Kiri (LS)
-  - `2..3` = Bahu Kanan (RS)
-  - `4..5` = Pergelangan Tangan Kiri (LW)
-  - `6..7` = Pergelangan Tangan Kanan (RW)
-  - `8..9` = Pinggul Kiri (LH)
-  - `10..11` = Pinggul Kanan (RH)
+### 5.1 Port 5052: Telemetri Pose & Gestur (39-Float CSV)
+- **Host & Port:** `127.0.0.1:5052` | **Frekuensi:** $\ge 30\text{ FPS}$ (latensi AI $\approx 18\text{ ms}$ pada CUDA GPU)
+- **Format String CSV (39 Nilai):**
+  - `0..11` = Koordinat sendi dasar (LS_X, LS_Y, RS_X, RS_Y, LW_X, LW_Y, RW_X, RW_Y, LH_X, LH_Y, RH_X, RH_Y)
   - `12` = Nilai Bukaan Mulut `MOUTH_OPEN` ($0.0 = \text{Tutup}, 1.0 = \text{Buka Lebar}$)
-  - `13..14` = Siku Kiri (LE)
-  - `15..16` = Siku Kanan (RE)
+  - `13..16` = Koordinat Siku (LE_X, LE_Y, RE_X, RE_Y)
   - `17` = Flag Gestur Tuck Dive (`IS_DIVE`: $1.0$ jika aktif)
   - `18` = Flag Gestur Kepakan Sayap (`IS_FLAP`: $1.0$ jika aktif)
   - `19` = Frekuensi Kepakan (`FLAP_FREQ` dalam Hz)
   - `20` = Daya Dorong Kepakan (`FLAP_POWER`: $0.0 - 1.0$)
+  - `21` = Orientasi Tubuh (`BODY_PITCH`: $-1.0 \sim +1.0$)
+  - `22..23` = Koordinat Hidung (NOSE_X, NOSE_Y)
+  - `24..27` = Biometrik (WINGSPAN_RATIO, FLAP_HEIGHT, LEAN_ANGLE_DEG, TRACKING_STATE)
+  - `28..31` = Gestur Lanjutan (IS_DASH, DASH_POWER, STEERING_INPUT, ACTIVE_STATE_ID)
+  - `32..33` = Kalibrasi (CALIB_STATE_ID, CALIB_PROGRESS)
+  - `34..38` = Gestur Ekstensi (IS_HOVER, IS_GENTLE_DESCENT, IS_FLY_UP, CHEST_ELEVATION, FOREARM_FLAP_POWER)
 
-### 4.2 Port 5053: Streaming Video Webcam PIP (Picture-in-Picture)
+### 5.2 Port 5053: Streaming Video Webcam PIP (Picture-in-Picture)
 - **Host & Port:** `127.0.0.1:5053`
 - **Format Paket:** Raw byte buffer gambar JPEG terkompresi ($320 \times 180$ piksel, *quality* 48, ukuran paket $\approx 3-4\text{ KB} < 65\text{ KB}$ MTU UDP).
-- **Fungsi di Unity:** Didekodekan langsung oleh `InGameFlightHUD.cs` menggunakan `Texture2D.LoadImage(bytes)` dan ditampilkan di kotak preview kanan atas layar.
-- **Fallback Otomatis:** Jika Python video stream belum aktif, kotak PIP secara otomatis menampilkan radar kerangka (*interactive skeleton wireframe*) lengkap dengan sendi siku dan indikator mode Elytra.
-
-### 4.3 Peluncur Proses Otomatis (PythonProcessManager.cs)
-- **Zero-Manual Launch:** Pemain/Developer **tidak perlu lagi membuka terminal terpisah** untuk menjalankan Python.
-- **Auto-Lifecycle:**
-  1. **Saat Play Mode / Game Dimulai (`Awake()`):** `PythonProcessManager.cs` mendeteksi keberadaan `venv/Scripts/python.exe` dan `active_cv_sender.py`, lalu meluncurkannya sebagai child process Windows dengan PID yang dipantau.
-  2. **Saat Play Mode / Game Berhenti (`ExitingPlayMode` / `OnApplicationQuit`):** Proses Python dihentikan seketika dengan `process.Kill()` dan *Windows TaskKill tree fallback* (`taskkill /PID {pid} /F /T`) sehingga webcam langsung dilepaskan tanpa tersangkut (zero-lock).
-- **Indikator HUD:** In-Game HUD menampilkan status koneksi live `Python CV : AKTIF (PID: xxxxx) [AUTO-SYNC]`.
+- **Fungsi di Unity:** Didekodekan langsung oleh `InGameFlightHUD.cs` menggunakan `Texture2D.LoadImage(bytes)` dan ditampilkan di kotak preview kanan atas layar secara real-time.
+- **Fallback Otomatis:** Jika Python video stream belum aktif, kotak PIP secara otomatis menampilkan radar kerangka (*interactive skeleton wireframe*) lengkap dengan sendi siku.
 
 ---
 
-## 5. KONTROL AKSI DESA & AUTO-HOVER
+## 6. KONTROL AKSI DESA & AUTO-HOVER
 
 Ketika naga terbang mendekati dan memasuki area *Trigger Collider* desa (`SphereCollider`, radius 25-35m):
 1. **Auto-Hover:** Naga berhenti maju otomatis dan memutar badan secara anggun menghadap pusat desa dengan osilasi mengambang (*hover bobbing* $\pm 0.4\text{ m}$).
@@ -178,31 +187,37 @@ Ketika naga terbang mendekati dan memasuki area *Trigger Collider* desa (`Sphere
 
 ---
 
-## 6. SISTEM KONTROL KEYBOARD HYBRID (*ZERO-CONFLICT*)
+## 7. SISTEM KONTROL KEYBOARD HYBRID (*ZERO-CONFLICT*)
 
 Untuk menjamin kelancaran pengujian kapan pun tanpa kamera, sistem keyboard fallback dirancang dengan aturan isolasi ketat:
 
 - **Aturan Isolasi:** Jika data kamera UDP terhubung dan pengguna tidak menekan tombol fisik, keyboard **dilarang keras menimpa data gestur kamera**.
-- **Pemetaan Tombol Keyboard Elytra:**
-  - **Kepakan Sayap (Fly Up + Speed Up):** `Spasi` atau `W`
-  - **Tuck Dive (Terjun Menukik Tajam -45°):** `S`
-  - **Meluncur Mendatar Elytra (-5° Glide):** `T` (atau lepas tombol)
-  - **Arahkan Badan ke Atas (Climb):** `Panah Atas` atau `Y`
-  - **Pitch Down Moderat:** `Panah Bawah`
-  - **Kemudi Belok:** `Panah Kiri / Kanan` atau `A / D`
+- **Pemetaan Tombol Keyboard Sky Peck:**
+  - **Kepakan Sayap (Flap to Climb ↑):** `Spasi` atau `W`
+  - **Tuck Dive (Terjun Menukik Tajam -45° ↓↓):** `S`
+  - **Meluncur Mendatar Glide (-4° Glide):** `T` (atau lepas tombol)
+  - **Propeller Dash (Dorongan Cepat):** `Left Shift` atau `E`
+  - **Arahkan Badan ke Atas (Climb/Soar):** `Panah Atas` atau `Y`
+  - **Kemudi Belok (Lean to Turn):** `Panah Kiri / Kanan` atau `A / D`
   - **Simulasi Aksi Desa:** Tombol `1` (Kepak Sayap), `2` / `F` (Semburan Air), `3` / `R` (Panggil Hujan)
 
 ---
 
-## 7. STRUKTUR SCENE & FILE UTAMA
+## 8. STRUKTUR SCENE & FILE UTAMA
 
 - **Scene Utama:** `Assets/_Scenes/Test_Dragon_Flight.unity` (Build Settings Index `0`).
-- **Skrip C#:**
-  - `Assets/_Scripts/Controllers/DragonFlightController.cs`: Pengendali penerbangan Minecraft Elytra 3D sejati, gravitasi, pertukaran energi kinetik, kepakan sayap, tuck dive, pitch/yaw/roll, dan auto-hover.
-  - `Assets/_Scripts/CV_Receiver/IPoseProvider.cs`: Interface abstraksi penyedia pose (termasuk Tuck Dive, Flapping, dan Siku).
-  - `Assets/_Scripts/CV_Receiver/UDPPoseReceiver.cs`: Penerima data pose UDP 5052 (21 float), smoothing, deteksi gestur Elytra, dan keyboard fallback zero-conflict.
-  - `Assets/_Scripts/UI/InGameFlightHUD.cs`: GUI telemetri kiri atas (Airspeed, Pitch, Alt, Elytra Mode), kotak preview webcam PIP kanan atas (port 5053), radar kerangka bersiku, dan panduan kontrol bawah.
-- **Skrip Python:**
-  - `ARDragonSkyGuardian_CV/active_cv_sender.py`: Pengirim pose resmi YOLOv8n-pose CUDA GPU + deteksi geometri Tuck Dive foto pengguna + streaming video JPEG PIP.
-  - `ARDragonSkyGuardian_CV/udp_sender.py`: Helper socket UDP data pose 21-float & video JPEG.
-  - `ARDragonSkyGuardian_CV/test_send_dummy_udp.py`: Bench pengujian sintetis 4-fase Elytra (T-Pose -> Flap -> Tuck Dive -> Climb) tanpa kamera.
+- **Skrip C# (`Assets/_Scripts/`):**
+  - `Controllers/DragonFlightController.cs`: Pengendali penerbangan Sky Peck 3D sejati, lift vertikal kepakan, akselerasi dive, Propeller Dash boost, konversi energi kinetik swoop soar, pelicinan kemudi lean, dan auto-hover desa.
+  - `Controllers/IFlightInputProvider.cs`: Antarmuka modular penyedia perintah penerbangan standar (`FlightCommand`).
+  - `Controllers/DefaultFlightInputMapper.cs`: Sistem pemeta input modular, kurva sensitivitas non-linear, deadzone, dan fatigue ease.
+  - `CV_Receiver/PythonProcessManager.cs`: Pengelola otomatis proses background Python (`active_cv_sender.py`), auto-launch pada Play Mode, resolver path venv otomatis, dan safe termination tree.
+  - `CV_Receiver/IPoseProvider.cs`: Interface abstraksi penyedia pose (mendukung Tuck Dive, Flapping, Lean to Turn, Propeller Dash, dan Siku).
+  - `CV_Receiver/UDPPoseReceiver.cs`: Penerima data pose UDP 5052 (39-float), smoothing Vector2.Lerp, kalkulasi gabungan arm tilt + torso lean, dan keyboard fallback zero-conflict.
+  - `UI/InGameFlightHUD.cs`: GUI telemetri kiri atas (Airspeed, Pitch, Alt, Sky Peck Mode, Python CV Status PID), kotak preview webcam PIP kanan atas (port 5053), radar kerangka bersiku, dan panduan kontrol bawah.
+- **Skrip Python (`ARDragonSkyGuardian_CV/`):**
+  - `active_cv_sender.py`: Pengirim pose resmi YOLOv8n-pose CUDA GPU + deteksi geometri Tuck Dive + Propeller Dash + Biometric Normalizer + streaming video JPEG PIP ke port 5053.
+  - `pose_stabilizer.py`: RobustKeypointTracker, Adaptive One-Euro Filter, Dynamic Arm Clamping, dan WingFlapDetector.
+  - `motion_recognizer.py`: Mesin pengenal gestur Sky Peck (Flap, Lean, Dive, Dash, Hover, Descent).
+  - `player_calibrator.py`: Mesin kalibrasi biometrik pemain personal (State 0-5).
+  - `udp_sender.py`: Helper socket UDP data pose 39-float & video JPEG PIP.
+  - `test_send_dummy_udp.py`: Bench pengujian sintetis 4-fase Sky Peck (Glide -> Flap Climb -> Tuck Dive -> Swoop Climb & Lean).

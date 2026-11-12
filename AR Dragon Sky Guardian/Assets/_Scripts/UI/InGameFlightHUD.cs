@@ -172,6 +172,7 @@ namespace DragonWingAR.UI
             DrawCameraPreviewBox();
             DrawFlightHUD();
             DrawControlsQuickGuide();
+            DrawCalibrationBanner();
         }
 
         /// <summary>
@@ -266,7 +267,22 @@ namespace DragonWingAR.UI
                 // Sendi tangan & warna status
                 Color handCol;
                 string poseLabel;
-                if (poseReceiver.IsTuckDive)
+                if (poseReceiver.IsHover)
+                {
+                    handCol = new Color(0.2f, 0.9f, 1f);
+                    poseLabel = "● HOVER MODE (LENGAN DI DADA + KEPAK)";
+                }
+                else if (poseReceiver.IsGentleDescent)
+                {
+                    handCol = new Color(0.4f, 0.8f, 0.9f);
+                    poseLabel = "● GENTLE DESCENT (TUCKED T-POSE)";
+                }
+                else if (poseReceiver.IsFlyUp)
+                {
+                    handCol = new Color(0f, 1f, 0.85f);
+                    poseLabel = "● FLY UP (DADA NAIK + KEPAK ↑↑)";
+                }
+                else if (poseReceiver.IsTuckDive)
                 {
                     handCol = new Color(1f, 0.3f, 0f);
                     poseLabel = "● DIVE TERJUN (TUCK DIVE ↓↓)";
@@ -318,7 +334,7 @@ namespace DragonWingAR.UI
 
             GUI.color = new Color(0.7f, 0.7f, 0.7f, 0.8f);
             GUIStyle centerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
-            GUI.Label(new Rect(area.x, area.yMax - 20, area.width, 20), "Kepak: FlyUp | T-Pose: Glide | Dive: Terjun", centerStyle);
+            GUI.Label(new Rect(area.x, area.yMax - 20, area.width, 20), "Kepak: Flap | Hover: Tucked Flap | T-Pose: Glide | Dive: Terjun", centerStyle);
         }
 
         /// <summary>
@@ -326,7 +342,7 @@ namespace DragonWingAR.UI
         /// </summary>
         private void DrawFlightHUD()
         {
-            Rect hudRect = new Rect(20, 20, 330, 208);
+            Rect hudRect = new Rect(20, 20, 330, 230);
             GUI.color = Color.white;
             GUI.DrawTexture(hudRect, _boxBgTexture);
             DrawOutline(hudRect, 1, new Color(0.2f, 0.8f, 1f, 0.6f));
@@ -353,10 +369,32 @@ namespace DragonWingAR.UI
             // Status Manuver Dinamis (Sky Peck Flight States)
             string vertStatus;
             Color vertCol;
-            if (poseReceiver != null && poseReceiver.IsTuckDive)
+            if (poseReceiver != null && poseReceiver.IsPropellerDash)
+            {
+                vertStatus = $"PROPELLER DASH: DORONGAN CEPAT ⚡⚡ (Speed: {speed:F1} m/s)";
+                vertCol = new Color(0.2f, 0.8f, 1f);
+            }
+            else if (poseReceiver != null && poseReceiver.IsTuckDive)
             {
                 vertStatus = $"TUCK DIVE: TERJUN CEPAT ↓↓ (Speed: {speed:F1} m/s)";
                 vertCol = new Color(1f, 0.35f, 0.05f);
+            }
+            else if (poseReceiver != null && poseReceiver.IsHover)
+            {
+                float vy = (flightController != null) ? flightController.CurrentVerticalVelocity : 0f;
+                vertStatus = $"HOVER MODE: MELAYANG DI UDARA (Speed: {speed:F1} m/s, Vy: {vy:F1} m/s)";
+                vertCol = new Color(0.2f, 0.9f, 1f);
+            }
+            else if (poseReceiver != null && poseReceiver.IsGentleDescent)
+            {
+                vertStatus = $"GENTLE DESCENT: MELUNCUR LEMBUT (Speed: {speed:F1} m/s, Sink: -1.8 m/s)";
+                vertCol = new Color(0.4f, 0.8f, 0.9f);
+            }
+            else if (poseReceiver != null && poseReceiver.IsFlyUp)
+            {
+                float climbRate = (flightController != null) ? flightController.CurrentVerticalVelocity : 10.0f;
+                vertStatus = $"FLY UP: MENANJAK NAIK TINGGI ↑↑ (+{climbRate:F1} m/s)";
+                vertCol = new Color(0f, 1f, 0.85f);
             }
             else if (flightController != null && flightController.IsSwoopClimbing)
             {
@@ -396,16 +434,39 @@ namespace DragonWingAR.UI
             GUI.DrawTexture(new Rect(ptrX - 4, barBg.y - 3, 8, 16), _barTexture);
 
             // Aksi Gestur Status
-            bool flap = poseReceiver != null && poseReceiver.IsFlapping;
+            bool hover = poseReceiver != null && poseReceiver.IsHover;
+            bool gentle = poseReceiver != null && poseReceiver.IsGentleDescent;
+            bool flyup = poseReceiver != null && poseReceiver.IsFlyUp;
+            bool dash = poseReceiver != null && poseReceiver.IsPropellerDash;
+            bool flap = poseReceiver != null && poseReceiver.IsFlapping && !flyup;
             bool water = poseReceiver != null && poseReceiver.IsWaterBreathing;
             bool high = poseReceiver != null && poseReceiver.IsHandsHighUp;
             bool dive = poseReceiver != null && poseReceiver.IsTuckDive;
 
-            string gestStr = $"Aksi: {(flap ? "[KEPAK]" : "")} {(dive ? "[DIVE]" : "")} {(water ? "[SEMBUR AIR]" : "")} {(high ? "[HUJAN EMBUN]" : "")}";
-            if (!flap && !dive && !water && !high) gestStr = "Aksi: Menjelajah Meluncur (Sky Peck)";
+            string gestStr = $"Aksi: {(hover ? "[HOVER]" : "")} {(gentle ? "[GENTLE DESCENT]" : "")} {(flyup ? "[FLY UP ↑]" : "")} {(dash ? "[DASH ⚡]" : "")} {(flap ? "[KEPAK]" : "")} {(dive ? "[DIVE]" : "")} {(water ? "[SEMBUR AIR]" : "")} {(high ? "[HUJAN EMBUN]" : "")}";
+            if (!hover && !gentle && !flyup && !dash && !flap && !dive && !water && !high) gestStr = "Aksi: Menjelajah Meluncur (Sky Peck)";
 
-            GUI.color = water ? Color.cyan : (dive ? new Color(1f, 0.4f, 0f) : (flap ? Color.green : Color.yellow));
+            GUI.color = dash ? new Color(0.2f, 0.8f, 1f) : (water ? Color.cyan : (dive ? new Color(1f, 0.4f, 0f) : (flap ? Color.green : Color.yellow)));
             GUI.Label(new Rect(32, 148, 300, 20), gestStr);
+
+            // Status Kalibrasi Profil Pemain (Phase 4)
+            string calibText = "Standar (Default)";
+            Color calibColor = new Color(0.7f, 0.7f, 0.7f);
+            if (poseReceiver != null)
+            {
+                if (poseReceiver.IsCalibrated)
+                {
+                    calibText = "PERSONAL (Adaptif Aktif)";
+                    calibColor = new Color(0f, 1f, 0.8f);
+                }
+                else if (poseReceiver.CalibrationStateId > 0 && poseReceiver.CalibrationStateId < 5)
+                {
+                    calibText = $"KALIBRASI ({poseReceiver.CalibrationProgress * 100:F0}%)";
+                    calibColor = Color.yellow;
+                }
+            }
+            GUI.color = calibColor;
+            GUI.Label(new Rect(32, 168, 300, 20), $"Profil Pemain: {calibText}");
 
             // Status Peluncur Otomatis Python CV
             PythonProcessManager pyMgr = PythonProcessManager.Instance;
@@ -413,7 +474,63 @@ namespace DragonWingAR.UI
             int pyPid = pyRunning ? pyMgr.ProcessId : 0;
             string pyStatus = pyRunning ? $"AKTIF (PID: {pyPid}) [AUTO-SYNC]" : (_isVideoConnected ? "TERKONEKSI EKSTERNAL" : "OFFLINE / STANDBY");
             GUI.color = pyRunning ? new Color(0.2f, 1f, 0.5f) : (_isVideoConnected ? Color.cyan : new Color(0.7f, 0.7f, 0.7f));
-            GUI.Label(new Rect(32, 168, 300, 20), $"Python CV  : {pyStatus}");
+            GUI.Label(new Rect(32, 188, 300, 20), $"Python CV  : {pyStatus}");
+        }
+
+        /// <summary>
+        /// Menggambar banner instruksi kalibrasi di bagian atas tengah layar saat proses kalibrasi berlangsung.
+        /// </summary>
+        private void DrawCalibrationBanner()
+        {
+            if (poseReceiver == null) return;
+            int step = poseReceiver.CalibrationStateId;
+            if (step <= 0 || step >= 5) return;
+
+            float width = 560f;
+            float height = 54f;
+            float x = (Screen.width - width) * 0.5f;
+            float y = 20f;
+
+            Rect bannerRect = new Rect(x, y, width, height);
+            GUI.color = new Color(0.05f, 0.08f, 0.14f, 0.95f);
+            GUI.DrawTexture(bannerRect, _barTexture);
+            DrawOutline(bannerRect, 2, new Color(0f, 0.9f, 1f, 0.9f));
+
+            string title = "";
+            switch (step)
+            {
+                case 1:
+                    title = "TAHAP 1/4: BERDIRI SANTAI (NETRAL) - Mengukur Postur Alami & Asimetri";
+                    break;
+                case 2:
+                    title = "TAHAP 2/4: RENTANGKAN SAYAP (T-POSE) - Mengukur Wingspan & Lengan";
+                    break;
+                case 3:
+                    title = "TAHAP 3/4: CONDONGKAN BADAN KE KIRI - Rentang Belok Kiri Nyaman";
+                    break;
+                case 4:
+                    title = "TAHAP 4/4: CONDONGKAN BADAN KE KANAN - Rentang Belok Kanan Nyaman";
+                    break;
+            }
+
+            GUI.color = Color.cyan;
+            GUIStyle textStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                fontSize = 12
+            };
+            GUI.Label(new Rect(x, y + 6, width, 20), title, textStyle);
+
+            // Progress Bar
+            Rect pBg = new Rect(x + 20, y + 32, width - 40, 10);
+            GUI.color = new Color(0.2f, 0.2f, 0.25f, 0.9f);
+            GUI.DrawTexture(pBg, _barTexture);
+
+            float prog = Mathf.Clamp01(poseReceiver.CalibrationProgress);
+            Rect pFill = new Rect(x + 20, y + 32, (width - 40) * prog, 10);
+            GUI.color = new Color(0f, 1f, 0.5f, 1f);
+            GUI.DrawTexture(pFill, _barTexture);
         }
 
         /// <summary>
@@ -437,7 +554,7 @@ namespace DragonWingAR.UI
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 11
             };
-            GUI.Label(bgRect, "Mekanik Sky Peck: Kepak Tangan = Flap to Climb ↑ | Condongkan Badan / Tilt = Lean to Turn & Bank | Tekuk Tangan = Tuck to Dive ↓ | Rentang Tangan = Glide", guideStyle);
+            GUI.Label(bgRect, "Mekanik Sky Peck: Kepak = Flap to Climb ↑ | Putar Lengan = Propeller Dash ⚡ | Condongkan Badan = Turn & Bank | Tekuk Tangan = Tuck Dive ↓ | Rentang Tangan = Glide", guideStyle);
         }
 
         private void DrawOutline(Rect rect, int width, Color color)

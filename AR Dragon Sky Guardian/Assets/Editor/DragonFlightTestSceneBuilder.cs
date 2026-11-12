@@ -88,11 +88,14 @@ namespace DragonWingAR.EditorTools
             col.center = new Vector3(0, 0, 0);
             col.size = new Vector3(4f, 2f, 5f);
 
-            // Kontroler UDP Pose Receiver
+            // Kontroler UDP Pose Receiver (Phase 1-4 Tuning: smoothingSpeed 22f)
             UDPPoseReceiver udpReceiver = dragonRoot.AddComponent<UDPPoseReceiver>();
             udpReceiver.port = 5052;
-            udpReceiver.smoothingSpeed = 12f;
+            udpReceiver.smoothingSpeed = 22f;
             udpReceiver.enableKeyboardFallback = true;
+
+            // Pemeta Input Penerbangan Modular (Phase 3 IFlightInputProvider)
+            dragonRoot.AddComponent<DefaultFlightInputMapper>();
 
             // Kontroler Penerbangan (Flight Controller)
             DragonFlightController flightCtrl = dragonRoot.AddComponent<DragonFlightController>();
@@ -222,8 +225,11 @@ namespace DragonWingAR.EditorTools
 
             UDPPoseReceiver udpReceiver = dragonRoot.AddComponent<UDPPoseReceiver>();
             udpReceiver.port = 5052;
-            udpReceiver.smoothingSpeed = 12f;
+            udpReceiver.smoothingSpeed = 22f;
             udpReceiver.enableKeyboardFallback = true;
+
+            // Pemeta Input Penerbangan Modular (Phase 3 IFlightInputProvider)
+            dragonRoot.AddComponent<DefaultFlightInputMapper>();
 
             DragonFlightController flightCtrl = dragonRoot.AddComponent<DragonFlightController>();
             flightCtrl.forwardSpeed = 12f;

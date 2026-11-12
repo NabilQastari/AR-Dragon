@@ -23,8 +23,8 @@ namespace DragonWingAR.CV
         [Tooltip("Port UDP yang mendengarkan data dari Python (default: 5052)")]
         public int port = 5052;
 
-        [Tooltip("Kecepatan pelicinan koordinat (Vector2.Lerp rate, sesuai konteks.md = 12f)")]
-        public float smoothingSpeed = 12f;
+        [Tooltip("Kecepatan pelicinan koordinat (Vector2.Lerp rate, dioptimalkan Phase 1 = 22f untuk responsivitas instan)")]
+        public float smoothingSpeed = 22f;
 
         [Tooltip("Batas waktu dalam detik sebelum koneksi dianggap terputus")]
         public float timeoutSeconds = 1.0f;
@@ -76,6 +76,29 @@ namespace DragonWingAR.CV
         public bool IsHandsTogether => _isHandsTogether;
         public bool IsHandsHighUp => _isHandsHighUp;
 
+        // Biometrik Phase 1
+        public float WingspanRatio => _wingspanRatio;
+        public float FlapHeightRatio => _flapHeightRatio;
+        public float LeanAngleDeg => _leanAngleDeg;
+        public float TrackingStateValue => _trackingStateValue;
+
+        // Gestur Phase 2
+        public bool IsPropellerDash => _isPropellerDash;
+        public float DashPower => _dashPower;
+
+        // Kalibrasi Phase 4
+        public int CalibrationStateId => _calibStateId;
+        public float CalibrationProgress => _calibProgress;
+        public bool IsCalibrated => _calibStateId == 5;
+
+        // Fitur Tambahan Kontrol Terbang: Fly Up, Hover & Gentle Descent
+        public bool IsHover => _isHover;
+        public bool IsGentleDescent => _isGentleDescent;
+        public bool IsFlyUp => _isFlyUp;
+        public float ChestElevation => _chestElevation;
+        public float ForearmFlapPower => _forearmFlapPower;
+        public int ActiveStateId => _rawActiveStateId;
+
         // ==========================================
         // Variabel Internal Smoothing & Status
         // ==========================================
@@ -95,6 +118,19 @@ namespace DragonWingAR.CV
         [SerializeField] private bool _isWaterBreathing = false;
         [SerializeField] private bool _isHandsTogether = false;
         [SerializeField] private bool _isHandsHighUp = false;
+        [SerializeField] private float _wingspanRatio = 1.2f;
+        [SerializeField] private float _flapHeightRatio = 0f;
+        [SerializeField] private float _leanAngleDeg = 0f;
+        [SerializeField] private int _calibStateId = 0;
+        [SerializeField] private float _calibProgress = 0f;
+        [SerializeField] private float _trackingStateValue = 1f;
+        [SerializeField] private bool _isPropellerDash = false;
+        [SerializeField] private float _dashPower = 0f;
+        [SerializeField] private bool _isHover = false;
+        [SerializeField] private bool _isGentleDescent = false;
+        [SerializeField] private bool _isFlyUp = false;
+        [SerializeField] private float _chestElevation = 1.55f;
+        [SerializeField] private float _forearmFlapPower = 0f;
 
         private Vector2 _smoothedLS = new Vector2(0.40f, 0.40f);
         private Vector2 _smoothedRS = new Vector2(0.60f, 0.40f);
@@ -124,6 +160,25 @@ namespace DragonWingAR.CV
         private float _rawFlapPower = 0f;
         private float _rawBodyPitch = 0f;
         private float _rawMouth = 0f;
+        private float _rawWingspanRatio = 1.2f;
+        private float _rawFlapHeightRatio = 0f;
+        private float _rawLeanAngleDeg = 0f;
+        private float _rawTrackingStateValue = 1f;
+        private bool _hasBiometrics = false;
+        private bool _rawIsDash = false;
+        private float _rawDashPower = 0f;
+        private float _rawSteeringInput = 0f;
+        private int _rawActiveStateId = 0;
+        private bool _hasPhase2Gestures = false;
+        private int _rawCalibStateId = 0;
+        private float _rawCalibProgress = 0f;
+        private bool _hasCalibration = false;
+        private bool _rawIsHover = false;
+        private bool _rawIsGentleDescent = false;
+        private bool _rawIsFlyUp = false;
+        private float _rawChestElevation = 1.55f;
+        private float _rawForearmFlapPower = 0f;
+        private bool _hasExtendedFlightGestures = false;
 
         // Gestur State Timers & Tracking
         private float _flapTimer = 0f;
@@ -319,6 +374,57 @@ namespace DragonWingAR.CV
                     _rawNose = new Vector2(v[22], v[23]);
                 }
 
+                if (tokens.Length >= 28)
+                {
+                    _rawWingspanRatio = v[24];
+                    _rawFlapHeightRatio = v[25];
+                    _rawLeanAngleDeg = v[26];
+                    _rawTrackingStateValue = v[27];
+                    _hasBiometrics = true;
+                }
+                else
+                {
+                    _hasBiometrics = false;
+                }
+
+                if (tokens.Length >= 32)
+                {
+                    _rawIsDash = v[28] > 0.5f;
+                    _rawDashPower = v[29];
+                    _rawSteeringInput = v[30];
+                    _rawActiveStateId = (int)v[31];
+                    _hasPhase2Gestures = true;
+                }
+                else
+                {
+                    _hasPhase2Gestures = false;
+                }
+
+                if (tokens.Length >= 34)
+                {
+                    _rawCalibStateId = (int)v[32];
+                    _rawCalibProgress = v[33];
+                    _hasCalibration = true;
+                }
+                else
+                {
+                    _hasCalibration = false;
+                }
+
+                if (tokens.Length >= 39)
+                {
+                    _rawIsHover = v[34] > 0.5f;
+                    _rawIsGentleDescent = v[35] > 0.5f;
+                    _rawIsFlyUp = v[36] > 0.5f;
+                    _rawChestElevation = v[37];
+                    _rawForearmFlapPower = v[38];
+                    _hasExtendedFlightGestures = true;
+                }
+                else
+                {
+                    _hasExtendedFlightGestures = false;
+                }
+
                 _lastPacketMs = _stopwatch.ElapsedMilliseconds;
                 _hasNewPacket = true;
             }
@@ -334,6 +440,17 @@ namespace DragonWingAR.CV
             bool pyDiveFlag, pyFlapFlag;
             float pyFlapPower;
             bool hasElbowsData, hasFlagsData, hasBodyPitchData;
+            float targetWingspan = 1.2f, targetFlapHeight = 0f, targetLeanAngle = 0f, targetTrackingState = 1f;
+            bool hasBiometricsData = false;
+            bool pyDashFlag = false;
+            float pyDashPower = 0f, pySteeringInput = 0f;
+            bool hasPhase2Data = false;
+            int targetCalibState = 0;
+            float targetCalibProgress = 0f;
+            bool hasCalibrationData = false;
+            bool pyIsHover = false, pyIsGentle = false, pyIsFlyUp = false;
+            float targetChestElevation = 1.55f, pyForearmFlapPower = 0f;
+            bool hasExtendedFlightData = false;
 
             lock (_dataLock)
             {
@@ -357,6 +474,28 @@ namespace DragonWingAR.CV
                 hasElbowsData = _hasElbows;
                 hasFlagsData = _hasExtendedFlags;
                 hasBodyPitchData = _hasBodyPitch;
+
+                targetWingspan = _rawWingspanRatio;
+                targetFlapHeight = _rawFlapHeightRatio;
+                targetLeanAngle = _rawLeanAngleDeg;
+                targetTrackingState = _rawTrackingStateValue;
+                hasBiometricsData = _hasBiometrics;
+
+                pyDashFlag = _rawIsDash;
+                pyDashPower = _rawDashPower;
+                pySteeringInput = _rawSteeringInput;
+                hasPhase2Data = _hasPhase2Gestures;
+
+                targetCalibState = _rawCalibStateId;
+                targetCalibProgress = _rawCalibProgress;
+                hasCalibrationData = _hasCalibration;
+
+                pyIsHover = _rawIsHover;
+                pyIsGentle = _rawIsGentleDescent;
+                pyIsFlyUp = _rawIsFlyUp;
+                targetChestElevation = _rawChestElevation;
+                pyForearmFlapPower = _rawForearmFlapPower;
+                hasExtendedFlightData = _hasExtendedFlightGestures;
             }
 
             // 1. Pelicinan Koordinat Vector2.Lerp (smoothingSpeed = 12f)
@@ -385,6 +524,34 @@ namespace DragonWingAR.CV
                     _smoothedLE = Vector2.Lerp(_smoothedLE, midL + new Vector2(-0.03f, 0.04f), lerpFactor);
                     _smoothedRE = Vector2.Lerp(_smoothedRE, midR + new Vector2(0.03f, 0.04f), lerpFactor);
                 }
+                if (hasBiometricsData)
+                {
+                    _wingspanRatio = Mathf.Lerp(_wingspanRatio, targetWingspan, lerpFactor);
+                    _flapHeightRatio = Mathf.Lerp(_flapHeightRatio, targetFlapHeight, lerpFactor);
+                    _leanAngleDeg = Mathf.Lerp(_leanAngleDeg, targetLeanAngle, lerpFactor);
+                    _trackingStateValue = targetTrackingState;
+                }
+                if (hasCalibrationData)
+                {
+                    _calibStateId = targetCalibState;
+                    _calibProgress = targetCalibProgress;
+                }
+                if (hasExtendedFlightData)
+                {
+                    _isHover = pyIsHover;
+                    _isGentleDescent = pyIsGentle;
+                    _isFlyUp = pyIsFlyUp;
+                    _chestElevation = targetChestElevation;
+                    _forearmFlapPower = pyForearmFlapPower;
+                }
+                else
+                {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
+                    _chestElevation = 1.55f;
+                    _forearmFlapPower = 0f;
+                }
             }
 
             // 2. Kemudi Belok & Banking ala Sky Peck (Kombinasi Kemiringan Lengan / Arm Tilt + Condong Torso / Torso Lean)
@@ -393,18 +560,30 @@ namespace DragonWingAR.CV
             float shoulderDist = Vector2.Distance(_smoothedLS, _smoothedRS);
             if (shoulderDist < 0.05f) shoulderDist = 0.20f;
 
-            // a. Arm Tilt (Beda tinggi pergelangan tangan kiri vs kanan)
-            float tiltDelta = _smoothedLW.y - _smoothedRW.y;
-            float armTurn = (Mathf.Abs(tiltDelta) < turnDeadzone) ? 0f : Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
+            if (_isConnected && hasPhase2Data)
+            {
+                _turnInput = pySteeringInput;
+                _isPropellerDash = pyDashFlag;
+                _dashPower = pyDashPower;
+            }
+            else
+            {
+                _isPropellerDash = false;
+                _dashPower = 0f;
 
-            // b. Torso Lean (Pergeseran sumbu bahu terhadap sumbu panggul)
-            float torsoDelta = (midShoulder.x - midHip.x) / shoulderDist;
-            float torsoTurn = (Mathf.Abs(torsoDelta) < 0.07f) ? 0f : Mathf.Clamp(torsoDelta * 2.2f, -1f, 1f);
+                // a. Arm Tilt (Beda tinggi pergelangan tangan kiri vs kanan)
+                float tiltDelta = _smoothedLW.y - _smoothedRW.y;
+                float armTurn = (Mathf.Abs(tiltDelta) < turnDeadzone) ? 0f : Mathf.Clamp(tiltDelta * turnMultiplier, -1f, 1f);
 
-            // c. Gabungan Lean to Turn ala Sky Peck: Pemain dapat berbelok dengan memiringkan tangan atau mencondongkan badan
-            float combinedLean = (armTurn * 0.5f) + (torsoTurn * 0.5f);
-            if (Mathf.Abs(combinedLean) < 0.04f) combinedLean = 0f;
-            _turnInput = Mathf.Clamp(combinedLean * 1.25f, -1f, 1f);
+                // b. Torso Lean (Pergeseran sumbu bahu terhadap sumbu panggul)
+                float torsoDelta = (midShoulder.x - midHip.x) / shoulderDist;
+                float torsoTurn = (Mathf.Abs(torsoDelta) < 0.07f) ? 0f : Mathf.Clamp(torsoDelta * 2.2f, -1f, 1f);
+
+                // c. Gabungan Lean to Turn ala Sky Peck: Pemain dapat berbelok dengan memiringkan tangan atau mencondongkan badan
+                float combinedLean = (armTurn * 0.5f) + (torsoTurn * 0.5f);
+                if (Mathf.Abs(combinedLean) < 0.04f) combinedLean = 0f;
+                _turnInput = Mathf.Clamp(combinedLean * 1.25f, -1f, 1f);
+            }
 
             // 3. Deteksi Gestur Dinamis Minecraft Elytra:
             // a. TUCK DIVE (Foto Pengguna: Tangan mengepal di dada, siku mengarah ke bawah):
@@ -564,8 +743,11 @@ namespace DragonWingAR.CV
                 bool keyGlide = kb.tKey.isPressed;
                 bool keyLeft = kb.leftArrowKey.isPressed || kb.qKey.isPressed;
                 bool keyRight = kb.rightArrowKey.isPressed || kb.dKey.isPressed;
+                bool keyHover = kb.hKey.isPressed;
+                bool keyGentle = kb.gKey.isPressed;
+                bool keyFlyUp = kb.uKey.isPressed;
 
-                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight;
+                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight || keyHover || keyGentle || keyFlyUp;
 
                 // Jika terhubung UDP dan tidak menyentuh keyboard, biarkan data kamera bekerja
                 if (_isConnected && !isAnyAction)
@@ -582,9 +764,52 @@ namespace DragonWingAR.CV
                     _turnInput = Mathf.Clamp(h, -1f, 1f);
                 }
 
-                // Aksi Vertikal / Gestur
-                if (keyDive)
+                // Aksi Vertikal / Gestur Tambahan (Hover, Gentle Descent, Fly Up)
+                if (keyHover)
                 {
+                    _isHover = true;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
+                    _forearmFlapPower = 0.85f;
+                    _isFlapping = false;
+                    _isTuckDive = false;
+                    _isTPose = false;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _pitchInput = 0f;
+                }
+                else if (keyGentle)
+                {
+                    _isGentleDescent = true;
+                    _isHover = false;
+                    _isFlyUp = false;
+                    _forearmFlapPower = 0f;
+                    _isFlapping = false;
+                    _isTuckDive = false;
+                    _isTPose = true;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _pitchInput = -0.15f;
+                }
+                else if (keyFlyUp)
+                {
+                    _isFlyUp = true;
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlapping = true;
+                    _flapTimer = 0.5f;
+                    _flapPower = 1.0f;
+                    _chestElevation = 1.85f;
+                    _bodyPitch = 0.85f;
+                    _pitchInput = 0.90f;
+                    _isTuckDive = false;
+                    _isTPose = false;
+                }
+                else if (keyDive)
+                {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isTuckDive = true;
                     _isAPose = true;
                     _isYPose = false;
@@ -594,6 +819,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyPitchUp)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isYPose = true;
                     _isTPose = false;
                     _isAPose = false;
@@ -602,6 +830,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyPitchDown)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isAPose = true;
                     _isYPose = false;
                     _isTPose = false;
@@ -610,6 +841,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyGlide || !_isConnected)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isTPose = true;
                     _isYPose = false;
                     _isAPose = false;
@@ -674,8 +908,11 @@ namespace DragonWingAR.CV
                 bool keyGlide = Input.GetKey(KeyCode.T);
                 bool keyLeft = Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.Q);
                 bool keyRight = Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D);
+                bool keyHover = Input.GetKey(KeyCode.H);
+                bool keyGentle = Input.GetKey(KeyCode.G);
+                bool keyFlyUp = Input.GetKey(KeyCode.U);
 
-                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight;
+                bool isAnyAction = keyFlap || keyDive || keyPitchUp || keyPitchDown || keyGlide || keyLeft || keyRight || keyHover || keyGentle || keyFlyUp;
 
                 if (_isConnected && !isAnyAction) return;
 
@@ -687,8 +924,51 @@ namespace DragonWingAR.CV
                     _turnInput = Mathf.Clamp(h, -1f, 1f);
                 }
 
-                if (keyDive)
+                if (keyHover)
                 {
+                    _isHover = true;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
+                    _forearmFlapPower = 0.85f;
+                    _isFlapping = false;
+                    _isTuckDive = false;
+                    _isTPose = false;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _pitchInput = 0f;
+                }
+                else if (keyGentle)
+                {
+                    _isGentleDescent = true;
+                    _isHover = false;
+                    _isFlyUp = false;
+                    _forearmFlapPower = 0f;
+                    _isFlapping = false;
+                    _isTuckDive = false;
+                    _isTPose = true;
+                    _isYPose = false;
+                    _isAPose = false;
+                    _pitchInput = -0.15f;
+                }
+                else if (keyFlyUp)
+                {
+                    _isFlyUp = true;
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlapping = true;
+                    _flapTimer = 0.5f;
+                    _flapPower = 1.0f;
+                    _chestElevation = 1.85f;
+                    _bodyPitch = 0.85f;
+                    _pitchInput = 0.90f;
+                    _isTuckDive = false;
+                    _isTPose = false;
+                }
+                else if (keyDive)
+                {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isTuckDive = true;
                     _isAPose = true;
                     _isYPose = false;
@@ -697,6 +977,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyPitchUp)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isYPose = true;
                     _isTPose = false;
                     _isAPose = false;
@@ -705,6 +988,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyPitchDown)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isAPose = true;
                     _isYPose = false;
                     _isTPose = false;
@@ -713,6 +999,9 @@ namespace DragonWingAR.CV
                 }
                 else if (keyGlide || !_isConnected)
                 {
+                    _isHover = false;
+                    _isGentleDescent = false;
+                    _isFlyUp = false;
                     _isTPose = true;
                     _isYPose = false;
                     _isAPose = false;
